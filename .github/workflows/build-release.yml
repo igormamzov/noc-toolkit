@@ -1,0 +1,171 @@
+name: Build Multi-Platform Release
+
+# Manual trigger only - for creating releases
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: false
+        default: 'latest'
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: NOC-Toolkit.exe
+            package_name: noc-toolkit-windows
+            asset_name: noc-toolkit-${{ github.event.inputs.version }}-windows.zip
+
+          - os: macos-latest
+            artifact_name: NOC-Toolkit
+            package_name: noc-toolkit-macos
+            asset_name: noc-toolkit-${{ github.event.inputs.version }}-macos.tar.gz
+
+          - os: ubuntu-latest
+            artifact_name: NOC-Toolkit
+            package_name: noc-toolkit-linux
+            asset_name: noc-toolkit-${{ github.event.inputs.version }}-linux.tar.gz
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build executable
+        run: |
+          pyinstaller NOC-Toolkit.spec --clean
+
+      - name: Create release package (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          New-Item -ItemType Directory -Path "${{ matrix.package_name }}" -Force
+          Copy-Item "dist\${{ matrix.artifact_name }}" "${{ matrix.package_name }}\"
+          Copy-Item ".env.example" "${{ matrix.package_name }}\"
+          Copy-Item "README.md" "${{ matrix.package_name }}\"
+          Copy-Item "README_RU.md" "${{ matrix.package_name }}\"
+
+          # Create run.bat
+          @"
+          @echo off
+          echo ============================================
+          echo NOC Toolkit for Windows
+          echo ============================================
+          echo.
+          ${{ matrix.artifact_name }}
+          echo.
+          pause
+          "@ | Out-File -FilePath "${{ matrix.package_name }}\run.bat" -Encoding ASCII
+
+          Compress-Archive -Path "${{ matrix.package_name }}\*" -DestinationPath "${{ matrix.asset_name }}"
+
+      - name: Create release package (macOS/Linux)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p "${{ matrix.package_name }}"
+          cp "dist/${{ matrix.artifact_name }}" "${{ matrix.package_name }}/"
+          chmod +x "${{ matrix.package_name }}/${{ matrix.artifact_name }}"
+          cp .env.example "${{ matrix.package_name }}/"
+          cp README.md "${{ matrix.package_name }}/"
+          cp README_RU.md "${{ matrix.package_name }}/"
+
+          # Create run.sh
+          cat > "${{ matrix.package_name }}/run.sh" << 'EOF'
+          #!/bin/bash
+          echo "============================================"
+          echo "NOC Toolkit"
+          echo "============================================"
+          echo ""
+          ./${{ matrix.artifact_name }}
+          echo ""
+          echo "============================================"
+          read -p "Press Enter to exit..."
+          EOF
+          chmod +x "${{ matrix.package_name }}/run.sh"
+
+          tar -czf "${{ matrix.asset_name }}" "${{ matrix.package_name }}"
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            certutil -hashfile "${{ matrix.asset_name }}" MD5 | grep -v "hash" | tr -d " " > "${{ matrix.asset_name }}.md5"
+          else
+            md5sum "${{ matrix.asset_name }}" > "${{ matrix.asset_name }}.md5"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package_name }}
+          path: |
+            ${{ matrix.asset_name }}
+            ${{ matrix.asset_name }}.md5
+          retention-days: 90
+
+  create-release-notes:
+    name: Create Release Summary
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release summary
+        run: |
+          echo "# NOC Toolkit - Release ${{ github.event.inputs.version }}" > RELEASE_SUMMARY.md
+          echo "" >> RELEASE_SUMMARY.md
+          echo "**Build Date:** $(date '+%Y-%m-%d %H:%M:%S UTC')" >> RELEASE_SUMMARY.md
+          echo "**Commit:** ${{ github.sha }}" >> RELEASE_SUMMARY.md
+          echo "" >> RELEASE_SUMMARY.md
+          echo "## 📦 Artifacts" >> RELEASE_SUMMARY.md
+          echo "" >> RELEASE_SUMMARY.md
+
+          for dir in artifacts/*/; do
+            if [ -d "$dir" ]; then
+              echo "### $(basename "$dir")" >> RELEASE_SUMMARY.md
+              ls -lh "$dir" >> RELEASE_SUMMARY.md
+              echo "" >> RELEASE_SUMMARY.md
+              if [ -f "$dir"/*.md5 ]; then
+                echo "**Checksum:**" >> RELEASE_SUMMARY.md
+                echo '```' >> RELEASE_SUMMARY.md
+                cat "$dir"/*.md5 >> RELEASE_SUMMARY.md
+                echo '```' >> RELEASE_SUMMARY.md
+                echo "" >> RELEASE_SUMMARY.md
+              fi
+            fi
+          done
+
+          echo "## 🚀 Installation" >> RELEASE_SUMMARY.md
+          echo "" >> RELEASE_SUMMARY.md
+          echo "1. Download the appropriate package for your platform" >> RELEASE_SUMMARY.md
+          echo "2. Extract the archive" >> RELEASE_SUMMARY.md
+          echo "3. Copy \`.env.example\` to \`.env\` and configure" >> RELEASE_SUMMARY.md
+          echo "4. Run the executable or use the provided run script" >> RELEASE_SUMMARY.md
+
+      - name: Upload release summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-summary
+          path: RELEASE_SUMMARY.md
+          retention-days: 90
