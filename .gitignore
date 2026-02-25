@@ -1,0 +1,91 @@
+# NOC Toolkit - Git Ignore File
+
+# Environment variables and secrets
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/*.code-workspace
+.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Output files
+output/
+exports/
+reports/
+*.csv
+*.json
+*.xlsx
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Config backups
+config/*.backup
+config/*.bak
+
+# Claude context (optional - remove if you want to track it)
+.claude/
+
+# PyInstaller
+*.spec.backup
+build/
+dist/
+*.pyc
+
+# Release packages
+noc-toolkit-*-release/
+noc-toolkit-*.zip
+noc-toolkit-*.tar.gz
+*.md5
+
+# GitHub Actions artifacts
+artifacts/
