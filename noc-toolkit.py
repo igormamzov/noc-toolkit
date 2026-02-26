@@ -8,8 +8,15 @@ This script provides a menu-driven interface for various operational tools.
 import os
 import sys
 import subprocess
+import platform
+from datetime import datetime
 from typing import List, Dict, Optional
 from pathlib import Path
+
+# Determine key directories early (needed for .env and debug log)
+_FROZEN = getattr(sys, 'frozen', False)
+_EXE_DIR = Path(sys.executable).parent if _FROZEN else Path(__file__).parent.resolve()
+_MEIPASS = getattr(sys, '_MEIPASS', None)
 
 # Load environment variables from centralized .env file
 _ENV_LOADED = False
@@ -19,10 +26,7 @@ try:
     from dotenv import load_dotenv
     # When running as PyInstaller EXE, look for .env next to the executable
     # (not in the temp extraction dir where __file__ points)
-    if getattr(sys, 'frozen', False):
-        env_path = Path(sys.executable).parent / ".env"
-    else:
-        env_path = Path(__file__).parent / ".env"
+    env_path = _EXE_DIR / ".env"
     if env_path.exists():
         load_dotenv(env_path)
         _ENV_LOADED = True
@@ -36,9 +40,94 @@ except ImportError:
 VERSION = "0.1.0"
 TOOLKIT_NAME = "NOC Toolkit"
 
-# Directory paths
-SCRIPT_DIR = Path(__file__).parent.resolve()
+# Directory paths — tools are bundled inside _MEIPASS, config is next to EXE
+SCRIPT_DIR = Path(_MEIPASS) if _MEIPASS else Path(__file__).parent.resolve()
 TOOLS_DIR = SCRIPT_DIR / "tools"
+
+
+def _write_debug_log() -> None:
+    """Write diagnostic log next to the EXE for troubleshooting."""
+    log_path = _EXE_DIR / "noc-toolkit-debug.log"
+    try:
+        lines: List[str] = []
+        lines.append(f"NOC Toolkit Debug Log — {datetime.now().isoformat()}")
+        lines.append("=" * 60)
+
+        # System info
+        lines.append(f"Python:          {sys.version}")
+        lines.append(f"Platform:        {platform.platform()}")
+        lines.append(f"OS:              {os.name}")
+        lines.append(f"CWD:             {os.getcwd()}")
+
+        # PyInstaller info
+        lines.append("")
+        lines.append("--- PyInstaller ---")
+        lines.append(f"sys.frozen:      {_FROZEN}")
+        lines.append(f"sys.executable:  {sys.executable}")
+        lines.append(f"sys._MEIPASS:    {_MEIPASS}")
+        lines.append(f"__file__:        {__file__}")
+
+        # Resolved directories
+        lines.append("")
+        lines.append("--- Paths ---")
+        lines.append(f"EXE_DIR:         {_EXE_DIR}")
+        lines.append(f"SCRIPT_DIR:      {SCRIPT_DIR}")
+        lines.append(f"TOOLS_DIR:       {TOOLS_DIR}")
+        lines.append(f"TOOLS_DIR exists:{TOOLS_DIR.exists()}")
+
+        # .env info
+        lines.append("")
+        lines.append("--- Environment ---")
+        lines.append(f"env_path:        {env_path}")
+        lines.append(f"env_path exists: {env_path.exists()}")
+        lines.append(f"ENV_LOADED:      {_ENV_LOADED}")
+        lines.append(f"ENV_MESSAGE:     {_ENV_MESSAGE}")
+
+        # Check which credential env vars are set (masked)
+        env_vars = [
+            'PAGERDUTY_API_TOKEN', 'JIRA_SERVER_URL', 'JIRA_EMAIL',
+            'JIRA_API_TOKEN', 'JIRA_PERSONAL_ACCESS_TOKEN',
+        ]
+        for var in env_vars:
+            val = os.environ.get(var)
+            if val:
+                masked = val[:4] + '***' + val[-4:] if len(val) > 8 else '***'
+                lines.append(f"  {var}: {masked}")
+            else:
+                lines.append(f"  {var}: NOT SET")
+
+        # List tools directory contents
+        lines.append("")
+        lines.append("--- Tools Directory ---")
+        if TOOLS_DIR.exists():
+            for item in sorted(TOOLS_DIR.rglob("*")):
+                rel = item.relative_to(TOOLS_DIR)
+                kind = "DIR " if item.is_dir() else f"FILE ({item.stat().st_size}b)"
+                lines.append(f"  {kind}: {rel}")
+        else:
+            lines.append("  TOOLS_DIR does not exist!")
+
+        # List EXE directory contents
+        lines.append("")
+        lines.append("--- EXE Directory ---")
+        for item in sorted(_EXE_DIR.iterdir()):
+            kind = "DIR " if item.is_dir() else f"FILE ({item.stat().st_size}b)"
+            lines.append(f"  {kind}: {item.name}")
+
+        log_path.write_text("\n".join(lines), encoding="utf-8")
+    except Exception as exc:
+        # Debug log must never crash the toolkit
+        print(f"  (debug log failed: {exc})")
+
+
+def _append_debug(message: str) -> None:
+    """Append a timestamped line to the debug log."""
+    log_path = _EXE_DIR / "noc-toolkit-debug.log"
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"\n[{datetime.now().isoformat()}] {message}\n")
+    except Exception:
+        pass
 
 
 class ToolDefinition:
@@ -123,7 +212,8 @@ class NOCToolkit:
 
         # Display environment configuration status
         env_icon = "✓" if _ENV_LOADED else "⚠️"
-        print(f"{env_icon} Config: {_ENV_MESSAGE}\n")
+        print(f"{env_icon} Config: {_ENV_MESSAGE}")
+        print(f"📋 Debug log: {_EXE_DIR / 'noc-toolkit-debug.log'}\n")
 
     def display_menu(self) -> None:
         """Display the main menu."""
@@ -196,16 +286,18 @@ class NOCToolkit:
         print(f"{'=' * 56}\n")
 
         try:
-            # Run the tool script
-            result = subprocess.run(
-                [sys.executable, str(tool_path)],
-                cwd=tool_path.parent
-            )
+            cmd = [sys.executable, str(tool_path)]
+            cwd = str(tool_path.parent)
+            # Append launch details to debug log
+            _append_debug(f"Launching: {tool.name}\n  cmd: {cmd}\n  cwd: {cwd}")
+            result = subprocess.run(cmd, cwd=cwd)
+            _append_debug(f"Finished: {tool.name} → exit code {result.returncode}")
             return result.returncode
         except KeyboardInterrupt:
             print("\n\n⚠️  Tool execution interrupted by user.")
             return 130
         except Exception as error:
+            _append_debug(f"EXCEPTION running {tool.name}: {error}")
             print(f"\n❌ Error running tool: {error}")
             return 1
 
@@ -257,6 +349,7 @@ def main() -> int:
         Exit code
     """
     try:
+        _write_debug_log()
         toolkit = NOCToolkit()
         toolkit.run_interactive_menu()
         return 0
