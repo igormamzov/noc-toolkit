@@ -38,7 +38,7 @@ except ImportError:
     _ENV_MESSAGE = "Warning: python-dotenv not installed (pip install python-dotenv)"
 
 # Version information
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 TOOLKIT_NAME = "NOC Toolkit"
 
 # Directory paths — tools are bundled inside _MEIPASS, config is next to EXE

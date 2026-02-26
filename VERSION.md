@@ -25,7 +25,7 @@ All components are currently in **0.x.x** version, indicating active development
 
 | Component                  | Version | Status        | Description                                    |
 |----------------------------|---------|---------------|------------------------------------------------|
-| **noc-toolkit**            | 0.1.0   | Development   | Main toolkit launcher and orchestrator         |
+| **noc-toolkit**            | 0.2.0   | Development   | Main toolkit launcher and orchestrator         |
 | **pd-monitor**             | 0.1.0   | Development   | Auto-acknowledge triggered PagerDuty incidents |
 | **pd-jira-tool**           | 0.3.0   | Development   | PagerDuty-Jira integration and sync tool       |
 | **pagerduty-job-extractor**| 0.1.0   | Development   | Extract failed job names from PD incidents     |
@@ -60,6 +60,28 @@ print(f"Version: {VERSION}")
 ---
 
 ## Version History
+
+### NOC Toolkit v0.2.0 (2026-02-25)
+
+**PyInstaller EXE fixes — tools now work inside the compiled binary:**
+
+**Bug fixes:**
+- **Symlinks replaced with real files** — `tools/` contained symlinks to local dev directories (`/Users/master/pd-jira-tool/`, etc.) which don't exist on GitHub Actions runners. PyInstaller was bundling an empty `tools/` directory, so the EXE launched but showed "Script not found" for all 3 tools. Fixed by copying the actual Python scripts into the repository.
+- **`.env` not found in EXE mode** — `Path(__file__).parent` in PyInstaller onefile mode points to the temp extraction directory (`_MEI...`), not the folder where the EXE lives. Fixed by using `Path(sys.executable).parent` when `sys.frozen` is True, so `.env` placed next to the EXE is correctly loaded.
+- **Tools re-launched the toolkit instead of running** — `subprocess.run([sys.executable, tool_path])` was used to launch tools, but in PyInstaller mode `sys.executable` is `NOC-Toolkit.exe` (not Python). This caused the EXE to re-launch itself instead of running the tool script. Fixed by using `runpy.run_path()` to execute tools in-process when frozen.
+- **Tool dependencies not bundled** — Tools import `pagerduty`, `jira`, `tqdm` at runtime, but PyInstaller only auto-detects imports from the main script. Since tools are loaded dynamically via `runpy`, these packages were not included in the EXE. Fixed by adding them to `hiddenimports` in `NOC-Toolkit.spec`.
+
+**New features:**
+- **Diagnostic debug log** — On every launch, writes `noc-toolkit-debug.log` next to the EXE with: Python/OS/platform info, PyInstaller paths (`frozen`, `_MEIPASS`, `executable`), `.env` location and load status, credential env vars (masked), full `tools/` directory listing, and tool launch commands with exit codes.
+
+**Architecture notes (PyInstaller onefile mode):**
+- `sys.executable` → the EXE itself, NOT a Python interpreter
+- `sys._MEIPASS` → temp extraction dir where bundled files live
+- `Path(__file__).parent` → inside `_MEIPASS`, not next to the EXE
+- Config files (`.env`) must be resolved via `Path(sys.executable).parent`
+- Bundled data files (tools) must be resolved via `Path(sys._MEIPASS)`
+- Tool scripts cannot be run via `subprocess` (no Python interpreter available) — use `runpy.run_path()` instead
+- Dynamic imports must be listed in `hiddenimports` in the `.spec` file
 
 ### NOC Toolkit v0.1.0 (2026-02-22)
 
@@ -120,5 +142,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-02-22
+**Last Updated:** 2026-02-25
 **Maintained by:** NOC Team
