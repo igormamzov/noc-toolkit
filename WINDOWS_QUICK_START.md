@@ -91,11 +91,8 @@ REM Готово! Файл в dist\NOC-Toolkit.exe
 ### Антивирус блокирует
 **Решение:** Добавить папку `dist\` в исключения Windows Defender
 
-### "Failed to execute script"
-**Решение:** Запустить с флагом debug:
-```cmd
-pyinstaller NOC-Toolkit.spec --clean --debug=all
-```
+### "Failed to execute script" или тулы не работают
+**Решение:** Посмотреть `noc-toolkit-debug.log` — он создаётся рядом с EXE автоматически при каждом запуске. В нём вся диагностика: пути, переменные окружения, список упакованных файлов.
 
 ---
 
