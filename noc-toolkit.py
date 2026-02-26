@@ -302,6 +302,11 @@ class NOCToolkit:
                     exit_code = exc.code if isinstance(exc.code, int) else 0
                     _append_debug(f"Finished (SystemExit): {tool.name} → code {exit_code}")
                     return exit_code
+                except ImportError as exc:
+                    _append_debug(f"IMPORT ERROR in {tool.name}: {exc}")
+                    print(f"\n❌ Missing package: {exc}")
+                    print("This dependency was not bundled into the EXE.")
+                    return 1
                 finally:
                     sys.argv = saved_argv
                     os.chdir(saved_cwd)
