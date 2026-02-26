@@ -26,6 +26,11 @@ a = Analysis(
         'certifi',
         'charset_normalizer',
         'idna',
+        # Tool dependencies (loaded dynamically via runpy, not auto-detected)
+        'pagerduty',
+        'jira',
+        'jira.exceptions',
+        'tqdm',
     ],
     hookspath=[],
     hooksconfig={},
