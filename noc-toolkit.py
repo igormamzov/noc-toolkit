@@ -9,6 +9,7 @@ import os
 import sys
 import subprocess
 import platform
+import runpy
 from datetime import datetime
 from typing import List, Dict, Optional
 from pathlib import Path
@@ -286,13 +287,34 @@ class NOCToolkit:
         print(f"{'=' * 56}\n")
 
         try:
-            cmd = [sys.executable, str(tool_path)]
-            cwd = str(tool_path.parent)
-            # Append launch details to debug log
-            _append_debug(f"Launching: {tool.name}\n  cmd: {cmd}\n  cwd: {cwd}")
-            result = subprocess.run(cmd, cwd=cwd)
-            _append_debug(f"Finished: {tool.name} → exit code {result.returncode}")
-            return result.returncode
+            if _FROZEN:
+                # In PyInstaller EXE, sys.executable is the EXE itself (not Python),
+                # so subprocess would just re-launch the toolkit. Run in-process instead.
+                _append_debug(f"Launching (in-process): {tool.name}\n  path: {tool_path}")
+                saved_argv = sys.argv
+                saved_cwd = os.getcwd()
+                try:
+                    sys.argv = [str(tool_path)]
+                    os.chdir(tool_path.parent)
+                    runpy.run_path(str(tool_path), run_name='__main__')
+                except SystemExit as exc:
+                    # Tools may call sys.exit() — catch it so we return to menu
+                    exit_code = exc.code if isinstance(exc.code, int) else 0
+                    _append_debug(f"Finished (SystemExit): {tool.name} → code {exit_code}")
+                    return exit_code
+                finally:
+                    sys.argv = saved_argv
+                    os.chdir(saved_cwd)
+                _append_debug(f"Finished: {tool.name} → exit code 0")
+                return 0
+            else:
+                # Running from source — use subprocess with Python interpreter
+                cmd = [sys.executable, str(tool_path)]
+                cwd = str(tool_path.parent)
+                _append_debug(f"Launching (subprocess): {tool.name}\n  cmd: {cmd}\n  cwd: {cwd}")
+                result = subprocess.run(cmd, cwd=cwd)
+                _append_debug(f"Finished: {tool.name} → exit code {result.returncode}")
+                return result.returncode
         except KeyboardInterrupt:
             print("\n\n⚠️  Tool execution interrupted by user.")
             return 130
