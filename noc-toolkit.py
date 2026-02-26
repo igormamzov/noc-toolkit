@@ -17,8 +17,12 @@ _ENV_MESSAGE = ""
 
 try:
     from dotenv import load_dotenv
-    # Load .env from toolkit root directory (shared by all tools)
-    env_path = Path(__file__).parent / ".env"
+    # When running as PyInstaller EXE, look for .env next to the executable
+    # (not in the temp extraction dir where __file__ points)
+    if getattr(sys, 'frozen', False):
+        env_path = Path(sys.executable).parent / ".env"
+    else:
+        env_path = Path(__file__).parent / ".env"
     if env_path.exists():
         load_dotenv(env_path)
         _ENV_LOADED = True
