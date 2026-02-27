@@ -38,7 +38,7 @@ except ImportError:
     _ENV_MESSAGE = "Warning: python-dotenv not installed (pip install python-dotenv)"
 
 # Version information
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 TOOLKIT_NAME = "NOC Toolkit"
 
 # Directory paths — tools are bundled inside _MEIPASS, config is next to EXE
@@ -189,6 +189,13 @@ class NOCToolkit:
                 name="PagerDuty Monitor",
                 description="Monitor and auto-acknowledge triggered incidents",
                 script_path="tools/pd-monitor/pd_monitor.py",
+                enabled=True
+            ),
+            ToolDefinition(
+                tool_id="pd-merge",
+                name="PagerDuty Incident Merge",
+                description="Find and merge related PagerDuty incidents by job name",
+                script_path="tools/pd-merge/pd_merge.py",
                 enabled=True
             ),
         ]

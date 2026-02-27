@@ -1,8 +1,8 @@
 # NOC Toolkit - Development Plan
 
 **Project Start Date:** 2026-02-22
-**Current Version:** 1.0.0
-**Status:** ✅ Phase 1 Complete
+**Current Version:** 1.1.0
+**Status:** ✅ Phase 1 Complete, Phase 1.5 Complete
 
 ---
 
@@ -190,6 +190,34 @@
 
 ## 🔄 Change Log
 
+### 2026-02-26 (pd-merge Tool Integration)
+
+**✅ Completed — PagerDuty Incident Merge Tool (pd-merge v0.2.0):**
+- Created `tools/pd-merge/pd_merge.py` — standalone tool implementing `skills/pd-merge-logic.md` v1.2
+- Single class `PagerDutyMergeTool` with full merge workflow
+- Three merge scenarios: same-day (A), cross-date with Jira validation (B), mass failure consolidation (C)
+- Deterministic target selection: real comments > alert priority (Databricks > Monitor > AirFlow) > earliest
+- Title normalization with regex for 4 alert types + consequential patterns
+- Note classification: "working on it" → ignore, DSSD/DRGN snooze → context, real → real
+- Interactive per-group confirmation (y/n/all/select/skip)
+- Per-incident selection mode for partial group merges
+- Skip persistence via `.pd_merge_skips.json` (--clear-skips, --show-skips)
+- Dry-run mode (--dry-run) and verbose mode (--verbose)
+- Registered as tool #4 in noc-toolkit menu
+- Updated all documentation: README.md, README_RU.md, PROJECT_DOCS.md, VERSION.md, PLAN.md, CONTEXT.md, SETUP.md, .env.example
+
+**Technical Details:**
+- Two-pass fetch: current (triggered+acknowledged) + historical (since Jan 1)
+- Mass failure detection via DSSD incident with >10 merged alerts
+- Alert type priority: Databricks (P1) > Monitor (P2) > AirFlow (P3) > unknown (P99)
+- Jira integration via `jira.JIRA` with `token_auth` for Scenario B validation
+- PagerDuty API via `pagerduty.RestApiV2Client` (list_all, rget, rput)
+
+**Tested:**
+- `--dry-run` against live PD API: detected DSSD-29178 mass failure (175 alerts, 78 known jobs), found 3 Scenario C candidates, correctly rejected Scenario B cross-date group (different root causes)
+- `--show-skips`, `--clear-skips`, `--help` all working
+- Syntax check passed (py_compile)
+
 ### 2026-02-22 (Phase 1 Complete + Enhancements + pd-monitor Tool)
 
 **✅ Completed - pd-monitor Tool Integration:**
@@ -312,5 +340,5 @@ For questions or issues with the toolkit:
 
 ---
 
-**Last Updated:** 2026-02-22 by Claude
-**Next Review:** After Phase 1 completion
+**Last Updated:** 2026-02-26 by Claude
+**Next Review:** After Phase 2 planning
