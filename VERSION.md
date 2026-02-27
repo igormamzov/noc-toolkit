@@ -25,10 +25,11 @@ All components are currently in **0.x.x** version, indicating active development
 
 | Component                  | Version | Status        | Description                                    |
 |----------------------------|---------|---------------|------------------------------------------------|
-| **noc-toolkit**            | 0.2.0   | Development   | Main toolkit launcher and orchestrator         |
+| **noc-toolkit**            | 0.3.0   | Development   | Main toolkit launcher and orchestrator         |
 | **pd-monitor**             | 0.1.0   | Development   | Auto-acknowledge triggered PagerDuty incidents |
 | **pd-jira-tool**           | 0.3.0   | Development   | PagerDuty-Jira integration and sync tool       |
 | **pagerduty-job-extractor**| 0.1.0   | Development   | Extract failed job names from PD incidents     |
+| **pd-merge**               | 0.2.0   | Development   | Find and merge related PD incidents by job name|
 
 ---
 
@@ -60,6 +61,23 @@ print(f"Version: {VERSION}")
 ---
 
 ## Version History
+
+### NOC Toolkit v0.3.0 (2026-02-26)
+
+**New tool — PagerDuty Incident Merge (pd-merge v0.2.0):**
+- Automated discovery and merging of related PD incidents by normalized job name
+- Three merge scenarios: same-day (A), cross-date with Jira validation (B), mass failure consolidation (C)
+- Deterministic target selection: real comments > alert priority > earliest
+- Interactive per-group and per-incident confirmation
+- Skip persistence across runs (.pd_merge_skips.json)
+- CLI: --dry-run, --verbose, --clear-skips, --show-skips
+- Registered as tool #4 in noc-toolkit menu
+
+### pd-merge v0.2.0 (2026-02-26)
+
+**Initial release:**
+- v0.1.0: Core merge logic implementing pd-merge-logic.md v1.2
+- v0.2.0: Added skip persistence (JSON file) and per-incident selection mode
 
 ### NOC Toolkit v0.2.0 (2026-02-25)
 
@@ -142,5 +160,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-02-25
+**Last Updated:** 2026-02-26
 **Maintained by:** NOC Team

@@ -82,6 +82,7 @@ dist/
 *.pyc
 
 # Release packages
+release/
 noc-toolkit-*-release/
 noc-toolkit-*.zip
 noc-toolkit-*.tar.gz

@@ -3,7 +3,7 @@
 ## 📋 Project Overview
 
 **Project Name:** NOC Toolkit
-**Version:** 1.0.0
+**Version:** 1.1.0
 **Created:** 2026-02-22
 **Purpose:** Unified command-line toolkit for NOC operations, providing a centralized menu-driven interface for various operational tools and scripts.
 
@@ -31,8 +31,10 @@ noc-toolkit/
 │   │   └── pagerduty_jira_tool.py
 │   ├── pagerduty-job-extractor/  # PagerDuty job extractor
 │   │   └── extract_jobs.py
-│   └── pd-monitor/            # PagerDuty monitor
-│       └── pd_monitor.py
+│   ├── pd-monitor/            # PagerDuty monitor
+│   │   └── pd_monitor.py
+│   └── pd-merge/              # PagerDuty incident merge
+│       └── pd_merge.py
 ├── config/                     # Configuration files
 │   ├── .env.example           # Example environment variables
 │   └── tools.json             # Tool registry and metadata
@@ -132,6 +134,56 @@ Designed to run every 10 minutes via cron:
 - Timezone-aware datetime handling (UTC)
 - Comprehensive error handling and logging
 
+### 4. PagerDuty Incident Merge
+
+**Location:** `tools/pd-merge/`
+**Main Script:** `pd_merge.py`
+**Version:** 0.2.0
+**Purpose:** Find and merge related PagerDuty incidents that share the same root cause (same job/DAG name)
+
+**Key Features:**
+- Automatic grouping of incidents by normalized job name
+- Three merge scenarios:
+  - **Scenario A:** Same-day incidents — merge by alert priority
+  - **Scenario B:** Cross-date with DSSD/DRGN ticket — validate via Jira before merging
+  - **Scenario C:** Mass failure consolidation — merge standalone incidents into mass-failure DSSD
+- Deterministic target selection: real comments > alert priority (Databricks > Monitor > AirFlow) > earliest created
+- Interactive per-group and per-incident confirmation before merging
+- Skip persistence — skipped incidents remembered across runs via JSON file
+- Dry-run mode for safe preview
+
+**Alert Type Priority:**
+
+| Priority | Alert Type | Role |
+|----------|-----------|------|
+| 1 (highest) | Databricks batch job failed | Preferred TARGET |
+| 2 | Monitor job failed | TARGET only if no Databricks exists |
+| 3 (lowest) | AirFlow DAG failed/exceeded | TARGET only if no Databricks or Monitor |
+
+**Title Normalization:**
+- Strip DSSD/DRGN/FCR/COREDATA ticket prefixes from titles
+- Strip `[ERROR]`, `[DATABRICKS]`, `[CRITICAL]`, `[AIRFLOW]` wrappers
+- For Monitor jobs: strip `_prod` and `_airflow_prod` suffixes
+- Group incidents by normalized job name
+
+**Configuration:**
+- Requires PagerDuty API token (write access for merges)
+- Optional: Jira credentials for Scenario B cross-date validation
+- Skip file stored at `tools/pd-merge/.pd_merge_skips.json`
+
+**CLI Options:**
+- `--dry-run, -n` — Simulate merges without API changes
+- `--verbose, -v` — Show extra debug output
+- `--clear-skips` — Clear the saved skip list
+- `--show-skips` — Show currently skipped incidents
+
+**Technical Details:**
+- Two-pass incident fetch (current triggered/acknowledged + historical since Jan 1)
+- Note classification: "working on it" → ignore, DSSD/DRGN snooze → context, everything else → real
+- Mass failure detection via DSSD incident alert count threshold
+- Per-incident selection mode for partial group merges
+- Merges executed one-at-a-time with error handling
+
 ---
 
 ## 🚀 Usage
@@ -155,11 +207,12 @@ The toolkit presents an interactive menu:
 Available Tools:
   1. PagerDuty-Jira Tool
   2. PagerDuty Job Extractor
-  3. [Future Tool 3]
+  3. PagerDuty Monitor
+  4. PagerDuty Incident Merge
 
   0. Exit
 
-Select tool [0-2]:
+Select tool [0-4]:
 ```
 
 ### Adding New Tools
@@ -194,13 +247,13 @@ The `.env` file in the toolkit root contains all environment variables for all t
 # ============================================================================
 # PagerDuty API Configuration
 # ============================================================================
-# Used by: pd-jira-tool, pagerduty-job-extractor
+# Used by: pd-jira-tool, pagerduty-job-extractor, pd-monitor, pd-merge
 PAGERDUTY_API_TOKEN=your_pd_token_here
 
 # ============================================================================
 # Jira Configuration
 # ============================================================================
-# Used by: pd-jira-tool
+# Used by: pd-jira-tool, pd-merge (Scenario B)
 JIRA_SERVER_URL=https://jira.livenation.com
 
 # Option 1: Jira Server/Data Center
@@ -254,6 +307,20 @@ def _load_tools(self) -> None:
             name="PagerDuty Job Extractor",
             description="Extract and analyze PagerDuty on-call schedules",
             script_path="tools/pagerduty-job-extractor/extract_jobs.py",
+            enabled=True
+        ),
+        ToolDefinition(
+            tool_id="pd-monitor",
+            name="PagerDuty Monitor",
+            description="Auto-refresh incident acknowledgments",
+            script_path="tools/pd-monitor/pd_monitor.py",
+            enabled=True
+        ),
+        ToolDefinition(
+            tool_id="pd-merge",
+            name="PagerDuty Incident Merge",
+            description="Find and merge related PagerDuty incidents by job name",
+            script_path="tools/pd-merge/pd_merge.py",
             enabled=True
         ),
     ]
@@ -332,6 +399,17 @@ Logs are stored in the `logs/` directory (created automatically):
 
 ## 🔄 Version History
 
+### Version 1.1.0 (2026-02-26)
+
+**New Tool — PagerDuty Incident Merge (pd-merge v0.2.0):**
+- Automated discovery and merging of related PagerDuty incidents by normalized job name
+- Three merge scenarios: same-day (A), cross-date with Jira validation (B), mass failure consolidation (C)
+- Deterministic target selection: real comments > alert priority > earliest created
+- Interactive per-group and per-incident confirmation
+- Skip persistence across runs via JSON file
+- CLI flags: --dry-run, --verbose, --clear-skips, --show-skips
+- Implements logic documented in skills/pd-merge-logic.md v1.2
+
 ### Version 1.0.0 (2026-02-22)
 
 **Core Features:**
@@ -382,4 +460,4 @@ Internal tool for organizational use only.
 
 ---
 
-**Last Updated:** 2026-02-22
+**Last Updated:** 2026-02-26

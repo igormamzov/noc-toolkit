@@ -19,6 +19,7 @@ NOC Toolkit is a menu-driven command-line interface that provides easy access to
   - **PagerDuty-Jira Tool** - Sync PagerDuty incidents with Jira
   - **PagerDuty Job Extractor** - Extract job names from merged PagerDuty incidents
   - **PagerDuty Monitor** - Monitor and auto-acknowledge triggered incidents
+  - **PagerDuty Incident Merge** - Find and merge related incidents by job name
 - 🚀 **Extensible** - Easy to add new tools
 - ✅ **Health Checks** - Automatically verifies tool availability
 
@@ -93,11 +94,17 @@ Available Tools:
   2. [✓] PagerDuty Job Extractor
       Extract and analyze PagerDuty on-call schedules
 
+  3. [✓] PagerDuty Monitor
+      Monitor and auto-acknowledge triggered incidents
+
+  4. [✓] PagerDuty Incident Merge
+      Find and merge related PagerDuty incidents by job name
+
 --------------------------------------------------------
   0. Exit
 ========================================================
 
-Select tool [0-2]:
+Select tool [0-4]:
 ```
 
 ### Menu Navigation
@@ -183,6 +190,34 @@ python3 pd_monitor.py --dry-run --verbose  # Test first
 crontab -e
 # Add: */10 * * * * cd /Users/master/pd-monitor && python3 pd_monitor.py >> /tmp/pd-monitor.log 2>&1
 ```
+
+---
+
+### 4. PagerDuty Incident Merge
+
+**Purpose:** Find and merge related PagerDuty incidents that share the same root cause (same job/DAG name)
+
+**Features:**
+- Automatic grouping of incidents by normalized job name
+- Three merge scenarios: same-day (A), cross-date with Jira validation (B), mass failure consolidation (C)
+- Deterministic target selection: real comments > alert priority (Databricks > Monitor > AirFlow) > earliest created
+- Interactive per-group and per-incident confirmation before merging
+- Skip persistence — skipped incidents are remembered across runs
+- Dry-run mode for safe preview
+
+**Configuration:** Uses shared `.env` from toolkit root (PAGERDUTY_API_TOKEN + optional Jira credentials for Scenario B)
+
+**Quick setup:**
+```bash
+python3 tools/pd-merge/pd_merge.py --dry-run    # Preview
+python3 tools/pd-merge/pd_merge.py               # Live run
+```
+
+**CLI options:**
+- `--dry-run, -n` — Simulate merges without API changes
+- `--verbose, -v` — Show extra debug output
+- `--clear-skips` — Clear the saved skip list
+- `--show-skips` — Show currently skipped incidents
 
 ---
 
@@ -299,9 +334,11 @@ Want to add a new tool to the toolkit?
 ```
 noc-toolkit/
 ├── noc-toolkit.py              # Main entry point
-├── tools/                      # All tools (symlinks or copies)
+├── tools/                      # All tools
 │   ├── pd-jira-tool/          # PagerDuty-Jira integration
-│   └── pagerduty-job-extractor/  # Job extractor
+│   ├── pagerduty-job-extractor/  # Job extractor
+│   ├── pd-monitor/            # Auto-acknowledge monitor
+│   └── pd-merge/              # Incident merge tool
 ├── config/                     # Configuration files
 ├── docs/                       # Documentation
 │   ├── PROJECT_DOCS.md        # Architecture docs
@@ -314,6 +351,12 @@ noc-toolkit/
 
 ## 🔄 Version History
 
+### Version 1.1.0 (2026-02-26)
+
+- ✅ Integrated PagerDuty Incident Merge tool (pd-merge v0.2.0)
+- ✅ Three merge scenarios: same-day, cross-date with Jira, mass failure consolidation
+- ✅ Interactive per-incident selection and skip persistence
+
 ### Version 1.0.0 (2026-02-22)
 
 **Initial Release**
@@ -321,6 +364,7 @@ noc-toolkit/
 - ✅ Menu-driven interface
 - ✅ Integrated PagerDuty-Jira Tool
 - ✅ Integrated PagerDuty Job Extractor
+- ✅ Integrated PagerDuty Monitor
 - ✅ Tool health checks
 - ✅ Comprehensive documentation
 
