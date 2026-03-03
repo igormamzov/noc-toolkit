@@ -25,11 +25,12 @@ All components are currently in **0.x.x** version, indicating active development
 
 | Component                  | Version | Status        | Description                                    |
 |----------------------------|---------|---------------|------------------------------------------------|
-| **noc-toolkit**            | 0.3.0   | Development   | Main toolkit launcher and orchestrator         |
+| **noc-toolkit**            | 0.4.0   | Development   | Main toolkit launcher and orchestrator         |
 | **pd-monitor**             | 0.1.0   | Development   | Auto-acknowledge triggered PagerDuty incidents |
 | **pd-jira-tool**           | 0.3.0   | Development   | PagerDuty-Jira integration and sync tool       |
 | **pagerduty-job-extractor**| 0.1.0   | Development   | Extract failed job names from PD incidents     |
 | **pd-merge**               | 0.2.0   | Development   | Find and merge related PD incidents by job name|
+| **data-freshness**         | 0.1.0   | Development   | DACSCAN data freshness report via Databricks SQL|
 
 ---
 
@@ -61,6 +62,27 @@ print(f"Version: {VERSION}")
 ---
 
 ## Version History
+
+### NOC Toolkit v0.4.0 (2026-02-27)
+
+**New tool — Data Freshness Checker (data-freshness v0.1.0):**
+- Automated DACSCAN 15-table freshness report via Databricks SQL REST API
+- Granular host-level checks for DACSCAN tables (52 hosts expected)
+- Simple max(update_ts) checks for AGG/AUDIT/SUMMARY and BI-LOADER tables
+- SALES_ORD_EVENT_OPT known issue (DSSD-29069) handled with update_ts fallback
+- HTML report with color-coded rows (met/delayed/fresh) for Slack posting
+- SLA countdown display (5:30 PM UTC deadline)
+- CLI: --report, --check-all, --dry-run, --verbose, --format csv/json
+- Registered as tool #5 in noc-toolkit menu
+- No new dependencies — uses requests (already bundled)
+
+### data-freshness v0.1.0 (2026-02-27)
+
+**Initial release:**
+- DatabricksSQL REST API client (Statement Execution API with polling)
+- Main freshness report query (15 rows from meta_load_status + BI-LOADER tables)
+- 8 DACSCAN host-level granular queries + 4 aggregate queries + 3 BI-LOADER queries
+- HTML report generation with webbrowser auto-open
 
 ### NOC Toolkit v0.3.0 (2026-02-26)
 
@@ -160,5 +182,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-02-26
+**Last Updated:** 2026-02-27
 **Maintained by:** NOC Team

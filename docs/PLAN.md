@@ -1,8 +1,8 @@
 # NOC Toolkit - Development Plan
 
 **Project Start Date:** 2026-02-22
-**Current Version:** 1.1.0
-**Status:** ✅ Phase 1 Complete, Phase 1.5 Complete
+**Current Version:** 1.2.0
+**Status:** ✅ Phase 1 Complete, Phase 1.5 Complete, data-freshness integrated
 
 ---
 
@@ -180,7 +180,7 @@
 
 ### Long-term Metrics
 
-- Number of integrated tools: Target 5+ by v1.2.0
+- Number of integrated tools: 5 (target 5+ by v1.2.0 ✅ achieved)
 - User adoption rate: Track active users
 - Time saved: Measure efficiency gains
 - Error rate: Minimize runtime errors
@@ -189,6 +189,36 @@
 ---
 
 ## 🔄 Change Log
+
+### 2026-02-27 (data-freshness Tool Integration)
+
+**✅ Completed — Data Freshness Checker (data-freshness v0.1.0):**
+- Created `tools/data-freshness/data_freshness.py` — automated DACSCAN 15-table freshness report
+- `DatabricksSQL` REST API client (Statement Execution API with async polling)
+- Main report query from `skills/noc-analytics.md` (15 rows from meta_load_status + BI-LOADER)
+- 8 DACSCAN host-level granular queries (52 hosts expected, excludes TWB/CH8/T43)
+- 4 aggregate queries (`max(update_ts)` for AGG/AUDIT/SUMMARY/BI_FACT_EVENT_DAILY)
+- 3 BI-LOADER queries (ord_dt and collection_dt freshness)
+- SALES_ORD_EVENT_OPT known issue (DSSD-29069) handled with `update_ts` fallback
+- HTML report with color-coded rows: met (white/green), delayed (red), fresh (yellow)
+- SLA countdown display (5:30 PM UTC deadline) in console output
+- CLI: `--report`, `--check-all`, `--dry-run`, `--verbose`, `--format csv/json`
+- Registered as tool #5 in noc-toolkit menu
+- No new dependencies — uses `requests` (already bundled)
+- Updated all documentation: README.md, README_RU.md, VERSION.md, PROJECT_DOCS.md, PLAN.md, CONTEXT.md, noc-analytics.md
+
+**Technical Details:**
+- Connection: Databricks SQL Statement Execution REST API (`POST /api/2.0/sql/statements`)
+- Auth: Bearer token via `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `DATABRICKS_WAREHOUSE_ID` env vars
+- Polling: PENDING/RUNNING → SUCCEEDED/FAILED with 5-minute timeout
+- HTML: inline CSS, single self-contained file, `webbrowser.open()` auto-display
+
+**Tested:**
+- Live query against Databricks Analytics: 15 rows, 1 Met / 14 Delayed (metadata lagging)
+- Granular checks confirmed 5 tables actually fresh despite delayed metadata
+- HTML report generated and opened in browser
+- `--dry-run` displays SQL queries without execution
+- Syntax check passed (`py_compile`)
 
 ### 2026-02-26 (pd-merge Tool Integration)
 
@@ -340,5 +370,5 @@ For questions or issues with the toolkit:
 
 ---
 
-**Last Updated:** 2026-02-26 by Claude
+**Last Updated:** 2026-02-27 by Claude
 **Next Review:** After Phase 2 planning
