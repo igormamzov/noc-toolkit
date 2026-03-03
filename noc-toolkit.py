@@ -205,6 +205,13 @@ class NOCToolkit:
                 script_path="tools/data-freshness/data_freshness.py",
                 enabled=True
             ),
+            ToolDefinition(
+                tool_id="noc-report-assistant",
+                name="NOC Report Assistant",
+                description="Sync Jira statuses into End-of-Shift Excel report",
+                script_path="tools/noc-report-assistant/noc_report_assistant.py",
+                enabled=True
+            ),
         ]
 
     def get_enabled_tools(self) -> List[ToolDefinition]:

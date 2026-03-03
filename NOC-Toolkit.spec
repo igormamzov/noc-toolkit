@@ -31,6 +31,7 @@ a = Analysis(
         'jira',
         'jira.exceptions',
         'tqdm',
+        'openpyxl',
     ],
     hookspath=[],
     hooksconfig={},
