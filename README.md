@@ -100,11 +100,14 @@ Available Tools:
   4. [✓] PagerDuty Incident Merge
       Find and merge related PagerDuty incidents by job name
 
+  5. [✓] Data Freshness Checker
+      DACSCAN data freshness report with granular table checks
+
 --------------------------------------------------------
   0. Exit
 ========================================================
 
-Select tool [0-4]:
+Select tool [0-5]:
 ```
 
 ### Menu Navigation
@@ -218,6 +221,36 @@ python3 tools/pd-merge/pd_merge.py               # Live run
 - `--verbose, -v` — Show extra debug output
 - `--clear-skips` — Clear the saved skip list
 - `--show-skips` — Show currently skipped incidents
+
+---
+
+### 5. Data Freshness Checker
+
+**Purpose:** Automate the daily DACSCAN Data Freshness Report by querying Databricks SQL
+
+**Features:**
+- Main 15-row freshness report (DACSCAN, AGG, AUDIT, SUMMARY, BI-LOADER tables)
+- Automatic granular checks for delayed tables (host-level for DACSCAN, max(update_ts) for aggregates)
+- SALES_ORD_EVENT_OPT known issue handled (DSSD-29069 — fallback to update_ts)
+- SLA countdown (5:30 PM UTC deadline)
+- HTML report with color-coded status — open in browser for Slack screenshots
+- Connects via Databricks SQL Statement Execution REST API (no heavy SDK)
+
+**Configuration:** Uses `.env` from toolkit root (DATABRICKS_HOST, DATABRICKS_TOKEN, DATABRICKS_WAREHOUSE_ID)
+
+**Quick setup:**
+```bash
+python3 tools/data-freshness/data_freshness.py --dry-run    # Preview SQL
+python3 tools/data-freshness/data_freshness.py               # Run report
+python3 tools/data-freshness/data_freshness.py --report      # Run + HTML report
+```
+
+**CLI options:**
+- `--report, -r` — Generate HTML report and open in browser
+- `--check-all` — Run granular checks for ALL tables (not just delayed)
+- `--dry-run, -n` — Show SQL queries without executing
+- `--verbose, -v` — Show API call details
+- `--format csv/json` — Alternative output formats
 
 ---
 
@@ -338,7 +371,8 @@ noc-toolkit/
 │   ├── pd-jira-tool/          # PagerDuty-Jira integration
 │   ├── pagerduty-job-extractor/  # Job extractor
 │   ├── pd-monitor/            # Auto-acknowledge monitor
-│   └── pd-merge/              # Incident merge tool
+│   ├── pd-merge/              # Incident merge tool
+│   └── data-freshness/        # DACSCAN freshness report
 ├── config/                     # Configuration files
 ├── docs/                       # Documentation
 │   ├── PROJECT_DOCS.md        # Architecture docs
@@ -350,6 +384,13 @@ noc-toolkit/
 ---
 
 ## 🔄 Version History
+
+### Version 1.2.0 (2026-02-27)
+
+- ✅ Integrated Data Freshness Checker (data-freshness v0.1.0)
+- ✅ Automated DACSCAN 15-table report via Databricks SQL REST API
+- ✅ Granular table-level checks with host-count and update_ts verification
+- ✅ HTML report generation with color-coded rows for Slack posting
 
 ### Version 1.1.0 (2026-02-26)
 

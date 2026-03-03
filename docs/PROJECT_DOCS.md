@@ -3,7 +3,7 @@
 ## 📋 Project Overview
 
 **Project Name:** NOC Toolkit
-**Version:** 1.1.0
+**Version:** 1.2.0
 **Created:** 2026-02-22
 **Purpose:** Unified command-line toolkit for NOC operations, providing a centralized menu-driven interface for various operational tools and scripts.
 
@@ -33,8 +33,10 @@ noc-toolkit/
 │   │   └── extract_jobs.py
 │   ├── pd-monitor/            # PagerDuty monitor
 │   │   └── pd_monitor.py
-│   └── pd-merge/              # PagerDuty incident merge
-│       └── pd_merge.py
+│   ├── pd-merge/              # PagerDuty incident merge
+│   │   └── pd_merge.py
+│   └── data-freshness/        # DACSCAN data freshness report
+│       └── data_freshness.py
 ├── config/                     # Configuration files
 │   ├── .env.example           # Example environment variables
 │   └── tools.json             # Tool registry and metadata
@@ -184,6 +186,44 @@ Designed to run every 10 minutes via cron:
 - Per-incident selection mode for partial group merges
 - Merges executed one-at-a-time with error handling
 
+### 5. Data Freshness Checker
+
+**Location:** `tools/data-freshness/`
+**Main Script:** `data_freshness.py`
+**Version:** 0.1.0
+**Purpose:** Automate the daily DACSCAN Data Freshness Report by querying Databricks SQL
+
+**Key Features:**
+- Main 15-row freshness report (DACSCAN, AGG, AUDIT, SUMMARY, BI-LOADER tables)
+- Automatic granular checks for delayed tables:
+  - Host-level checks for DACSCAN tables (52 hosts expected, excludes TWB/CH8/T43)
+  - `max(update_ts)` checks for AGG/AUDIT/SUMMARY aggregate tables
+  - Specific date-column checks for BI-LOADER tables
+- SALES_ORD_EVENT_OPT known issue handled (DSSD-29069 — fallback to `max(update_ts)`)
+- HTML report with color-coded rows (met/delayed/fresh) for Slack screenshots
+- SLA countdown display (5:30 PM UTC deadline)
+- Connects via Databricks SQL Statement Execution REST API (no heavy SDK)
+
+**Configuration:**
+- Requires Databricks credentials via environment variables:
+  - `DATABRICKS_HOST` — Databricks workspace hostname
+  - `DATABRICKS_TOKEN` — Personal access token
+  - `DATABRICKS_WAREHOUSE_ID` — SQL warehouse ID
+
+**CLI Options:**
+- `--report, -r` — Generate HTML report and open in browser
+- `--check-all` — Run granular checks for ALL tables (not just delayed)
+- `--dry-run, -n` — Show SQL queries without executing
+- `--verbose, -v` — Show API call details
+- `--format csv/json` — Alternative output formats
+
+**Technical Details:**
+- `DatabricksSQL` REST client class with async polling (PENDING/RUNNING → SUCCEEDED/FAILED)
+- Statement Execution API: `POST /api/2.0/sql/statements`
+- 5-minute query timeout with configurable polling interval
+- HTML report saved as `freshness-report-YYYY-MM-DD.html`, auto-opened via `webbrowser.open()`
+- Three color states: met (white/green), delayed (red background), fresh-but-metadata-lagging (yellow)
+
 ---
 
 ## 🚀 Usage
@@ -209,10 +249,11 @@ Available Tools:
   2. PagerDuty Job Extractor
   3. PagerDuty Monitor
   4. PagerDuty Incident Merge
+  5. Data Freshness Checker
 
   0. Exit
 
-Select tool [0-4]:
+Select tool [0-5]:
 ```
 
 ### Adding New Tools
@@ -262,6 +303,14 @@ JIRA_PERSONAL_ACCESS_TOKEN=your_personal_access_token_here
 # Option 2: Jira Cloud
 # JIRA_EMAIL=your_email@example.com
 # JIRA_API_TOKEN=your_jira_api_token_here
+
+# ============================================================================
+# Databricks SQL Configuration (for Data Freshness Checker)
+# ============================================================================
+# Used by: data-freshness
+# DATABRICKS_HOST=ticketmaster-cds-analytics.cloud.databricks.com
+# DATABRICKS_TOKEN=your_databricks_personal_access_token
+# DATABRICKS_WAREHOUSE_ID=dbb3244d6fa2f0fc
 
 # ============================================================================
 # Optional Tool-Specific Settings
@@ -321,6 +370,13 @@ def _load_tools(self) -> None:
             name="PagerDuty Incident Merge",
             description="Find and merge related PagerDuty incidents by job name",
             script_path="tools/pd-merge/pd_merge.py",
+            enabled=True
+        ),
+        ToolDefinition(
+            tool_id="data-freshness",
+            name="Data Freshness Checker",
+            description="DACSCAN data freshness report with granular table checks",
+            script_path="tools/data-freshness/data_freshness.py",
             enabled=True
         ),
     ]
@@ -399,6 +455,19 @@ Logs are stored in the `logs/` directory (created automatically):
 
 ## 🔄 Version History
 
+### Version 1.2.0 (2026-02-27)
+
+**New Tool — Data Freshness Checker (data-freshness v0.1.0):**
+- Automated DACSCAN 15-table freshness report via Databricks SQL REST API
+- Granular host-level checks for DACSCAN tables (52 hosts expected)
+- Simple `max(update_ts)` checks for AGG/AUDIT/SUMMARY and BI-LOADER tables
+- SALES_ORD_EVENT_OPT known issue (DSSD-29069) handled with `update_ts` fallback
+- HTML report with color-coded rows (met/delayed/fresh) for Slack posting
+- SLA countdown display (5:30 PM UTC deadline)
+- CLI: `--report`, `--check-all`, `--dry-run`, `--verbose`, `--format csv/json`
+- Registered as tool #5 in noc-toolkit menu
+- No new dependencies — uses `requests` (already bundled)
+
 ### Version 1.1.0 (2026-02-26)
 
 **New Tool — PagerDuty Incident Merge (pd-merge v0.2.0):**
@@ -460,4 +529,4 @@ Internal tool for organizational use only.
 
 ---
 
-**Last Updated:** 2026-02-26
+**Last Updated:** 2026-02-27

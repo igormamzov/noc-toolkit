@@ -909,7 +909,133 @@ ToolDefinition(
 
 ---
 
+## 📅 Сессия 4: Разработка data-freshness (2026-02-27)
+
+### 🎯 Цель сессии
+Создать автоматический инструмент проверки свежести данных (DACSCAN Data Freshness Report), реализующий логику из `skills/noc-analytics.md` v2.2.
+
+### 💬 Ключевые запросы пользователя
+
+1. **Создать 5-ю тулу для DACSCAN отчёта**
+   - Реализовать SQL-запросы из noc-analytics.md
+   - Подключение через Databricks SQL REST API (без тяжёлого SDK)
+   - Гранулярные проверки для задержанных таблиц
+
+2. **Вытащить токен из MCP конфигурации**
+   - Извлечь Databricks credentials из `~/.claude.json` → `mcpServers.databricks-sql_analytics`
+   - Автоматически вставить в `.env`
+
+3. **Добавить HTML-отчёт**
+   - Визуальный отчёт похожий на вывод Databricks notebook
+   - Цветовая кодировка: met (белый/зелёный), delayed (красный), fresh (жёлтый)
+   - SLA статус только в консольном выводе, не в HTML
+
+4. **Обновить всю документацию**
+   - README.md, README_RU.md, VERSION.md, PROJECT_DOCS.md, CONTEXT.md, PLAN.md, noc-analytics.md
+
+### ✅ Что было сделано
+
+#### 1. Создан data-freshness (v0.1.0)
+
+**Файл:** `tools/data-freshness/data_freshness.py` (~600 строк)
+
+**Архитектура:**
+- Data classes: `FreshnessRow`, `GranularResult`
+- Класс `DatabricksSQL` — REST API клиент (Statement Execution API с polling)
+- Класс `DataFreshnessChecker` — оркестратор отчёта
+
+**Ключевые методы:**
+- `DatabricksSQL.execute()` — POST /api/2.0/sql/statements + polling (PENDING/RUNNING → SUCCEEDED/FAILED)
+- `run_main_report()` — Query 1 из noc-analytics.md (15 строк)
+- `run_granular_check()` — host-level проверка для DACSCAN таблиц (52 хоста)
+- `run_simple_freshness_check()` — max(update_ts) для агрегатных таблиц
+- `run_biloader_check()` — проверка BI-LOADER таблиц
+- `format_table()` / `format_csv()` / `format_json()` — форматы вывода
+- `format_html()` — HTML отчёт с inline CSS
+
+**CLI интерфейс:**
+```bash
+python3 data_freshness.py [OPTIONS]
+
+Опции:
+  -r, --report       Генерация HTML-отчёта
+  --check-all        Проверить все таблицы (не только delayed)
+  -n, --dry-run      Показать SQL без выполнения
+  -v, --verbose      Подробный вывод
+  --format csv/json  Альтернативный формат
+```
+
+#### 2. Интеграция в noc-toolkit
+
+- Зарегистрирован как tool #5 в `_load_tools()`
+- Появляется в меню как "Data Freshness Checker"
+- Добавлены Databricks переменные в `.env.example`
+
+#### 3. Тестирование
+
+**Live-тест против Databricks Analytics:**
+- Query 1: 15 строк получено, 1 Met / 14 Delayed
+- Гранулярные проверки: 5 таблиц реально свежие (metadata lagging)
+- HTML-отчёт сгенерирован и открыт в браузере
+- Dry-run: SQL-запросы отображаются корректно
+- Syntax check: `py_compile` passed
+
+#### 4. Обновление документации (7 файлов)
+
+- README.md — tool #5 section, menu update, version history, directory structure
+- README_RU.md — аналогичные обновления на русском
+- VERSION.md — новая строка data-freshness 0.1.0, bumped noc-toolkit to 0.4.0
+- PROJECT_DOCS.md — directory structure, ### 5. section, tool registry, env vars, version history
+- CONTEXT.md — эта сессия
+- PLAN.md — Change Log entry
+- skills/noc-analytics.md — Planned → Implemented, changelog v2.2
+
+### 🔑 Ключевые технические решения (Сессия 4)
+
+#### Решение 1: REST API vs Databricks SDK
+
+**Принято:** Databricks SQL Statement Execution REST API (`requests` only)
+
+**Обоснование:**
+- `requests` уже в зависимостях (используется pagerduty, jira)
+- Нет нового тяжёлого пакета (databricks-sql-connector требует PyArrow ~200MB)
+- Проще для PyInstaller bundling
+- Пользователь выбрал этот вариант из предложенных
+
+#### Решение 2: HTML-отчёт vs скриншот vs PDF
+
+**Принято:** HTML файл с inline CSS, автооткрытие в браузере
+
+**Обоснование:**
+- Пользователь хотел визуальный отчёт похожий на Databricks notebook
+- HTML легко открывается, масштабируется, подходит для скриншотов в Slack
+- Inline CSS = один файл, без внешних зависимостей
+- `webbrowser.open()` — кроссплатформенное открытие
+
+#### Решение 3: Три цветовых состояния
+
+**Принято:** met (белый фон, зелёный текст), delayed (красный фон), fresh-but-metadata-lagging (жёлтый фон)
+
+**Обоснование:**
+- Третье состояние важно: meta_load_status показывает "Delayed", но гранулярная проверка подтверждает свежесть
+- Помогает NOC инженеру быстро отличить реальные задержки от ложных
+
+#### Решение 4: SALES_ORD_EVENT_OPT fallback
+
+**Принято:** `max(update_ts)` вместо host-level проверки
+
+**Обоснование:**
+- Известная проблема DSSD-29069: таблица никогда не имеет 52 хоста/день (диапазон 46-51)
+- Host-level запрос всегда показывает false-positive delay
+- `max(update_ts)` корректно определяет свежесть данных
+
+---
+
 ## 📌 Changelog этого документа
+
+### 2026-02-27 - Сессия 4: data-freshness
+- ✅ Добавлена Сессия 4 с описанием разработки data-freshness
+- ✅ Документированы технические решения
 
 ### 2026-02-26 - Сессия 3: pd-merge
 - ✅ Добавлена Сессия 3 с описанием разработки pd-merge
@@ -923,6 +1049,6 @@ ToolDefinition(
 
 ---
 
-**Последнее обновление:** 2026-02-26
-**Версия документа:** 1.1.0
-**Статус проекта:** Phase 1 Complete + pd-merge integrated ✅
+**Последнее обновление:** 2026-02-27
+**Версия документа:** 1.2.0
+**Статус проекта:** Phase 1 Complete + pd-merge + data-freshness integrated ✅
