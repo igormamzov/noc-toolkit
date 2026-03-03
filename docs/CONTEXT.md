@@ -539,7 +539,7 @@ ToolDefinition(
 - Подробные комментарии и notes
 
 **CHANGELOG.md:**
-- Version 1.0.0 (2026-02-22) - Initial release
+- Version 0.1.0 (2026-02-22) - Initial release
 - Полный список features и технических деталей
 - Planned features для будущих версий
 
@@ -1049,6 +1049,6 @@ python3 data_freshness.py [OPTIONS]
 
 ---
 
-**Последнее обновление:** 2026-02-27
-**Версия документа:** 1.2.0
-**Статус проекта:** Phase 1 Complete + pd-merge + data-freshness integrated ✅
+**Последнее обновление:** 2026-03-03
+**Версия документа:** 0.5.0
+**Статус проекта:** Phase 1 Complete, 6 tools integrated ✅

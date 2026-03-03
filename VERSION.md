@@ -25,12 +25,13 @@ All components are currently in **0.x.x** version, indicating active development
 
 | Component                  | Version | Status        | Description                                    |
 |----------------------------|---------|---------------|------------------------------------------------|
-| **noc-toolkit**            | 0.4.0   | Development   | Main toolkit launcher and orchestrator         |
+| **noc-toolkit**            | 0.5.0   | Development   | Main toolkit launcher and orchestrator         |
 | **pd-monitor**             | 0.1.0   | Development   | Auto-acknowledge triggered PagerDuty incidents |
 | **pd-jira-tool**           | 0.3.0   | Development   | PagerDuty-Jira integration and sync tool       |
 | **pagerduty-job-extractor**| 0.1.0   | Development   | Extract failed job names from PD incidents     |
 | **pd-merge**               | 0.2.0   | Development   | Find and merge related PD incidents by job name|
 | **data-freshness**         | 0.1.0   | Development   | DACSCAN data freshness report via Databricks SQL|
+| **noc-report-assistant**   | 0.1.0   | Development   | Sync Jira statuses into End-of-Shift Excel report|
 
 ---
 
@@ -62,6 +63,28 @@ print(f"Version: {VERSION}")
 ---
 
 ## Version History
+
+### NOC Toolkit v0.5.0 (2026-03-03)
+
+**New tool — NOC Report Assistant (noc-report-assistant v0.1.0):**
+- Sync Jira statuses (column E) for existing tickets in End-of-Shift Excel report
+- Add new ticket rows to "Things to monitor" section with Jira + Slack links
+- Auto-detect Jira/Slack links in any paste order
+- Interactive sheet and action selection menus
+- Robust openpyxl handling: 6 workarounds for insert_rows pitfalls (merge duplication, hyperlink corruption, fill loss)
+- Preserves all Excel formatting, merges, and hyperlinks across inserts
+- CLI: --dry-run, --verbose, --file
+- Registered as tool #6 in noc-toolkit menu
+- New dependency: openpyxl>=3.1.0
+
+### noc-report-assistant v0.1.0 (2026-03-03)
+
+**Initial release:**
+- Two actions: sync statuses, add row
+- Jira REST API integration via stdlib urllib (Bearer token, SSL disabled)
+- Native cell hyperlinks (not =HYPERLINK formulas) to avoid merged cell corruption
+- Style copying from reference rows for consistent formatting
+- Permalink merge preservation after row insertions
 
 ### NOC Toolkit v0.4.0 (2026-02-27)
 
@@ -182,5 +205,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-02-27
+**Last Updated:** 2026-03-03
 **Maintained by:** NOC Team
