@@ -1,6 +1,6 @@
 # NOC Toolkit
 
-**Version:** 1.0.0
+**Version:** 0.5.0
 **A unified command-line toolkit for NOC operations**
 
 ---
@@ -20,6 +20,8 @@ NOC Toolkit is a menu-driven command-line interface that provides easy access to
   - **PagerDuty Job Extractor** - Extract job names from merged PagerDuty incidents
   - **PagerDuty Monitor** - Monitor and auto-acknowledge triggered incidents
   - **PagerDuty Incident Merge** - Find and merge related incidents by job name
+  - **Data Freshness Checker** - DACSCAN data freshness report via Databricks SQL
+  - **NOC Report Assistant** - Sync Jira statuses into End-of-Shift Excel report
 - 🚀 **Extensible** - Easy to add new tools
 - ✅ **Health Checks** - Automatically verifies tool availability
 
@@ -79,7 +81,7 @@ When you launch the toolkit, you'll see an interactive menu:
 ```
 ╔════════════════════════════════════════════════════════╗
 ║                                                        ║
-║              NOC Toolkit v1.0.0                        ║
+║              NOC Toolkit v0.5.0                        ║
 ║                                                        ║
 ║         Unified NOC Operations Toolkit                 ║
 ║                                                        ║
@@ -103,11 +105,14 @@ Available Tools:
   5. [✓] Data Freshness Checker
       DACSCAN data freshness report with granular table checks
 
+  6. [✓] NOC Report Assistant
+      Sync Jira statuses into End-of-Shift Excel report
+
 --------------------------------------------------------
   0. Exit
 ========================================================
 
-Select tool [0-5]:
+Select tool [0-6]:
 ```
 
 ### Menu Navigation
@@ -254,6 +259,32 @@ python3 tools/data-freshness/data_freshness.py --report      # Run + HTML report
 
 ---
 
+### 6. NOC Report Assistant
+
+**Purpose:** Sync Jira statuses and add ticket rows to the End-of-Shift Excel report
+
+**Features:**
+- Sync statuses — update Jira statuses (column E) for all existing tickets
+- Add row — insert a new ticket to "Things to monitor" section with Jira + Slack links
+- Auto-detects Jira and Slack links in any paste order
+- Preserves all Excel formatting, merges, and hyperlinks
+- Works with both Night-Shift-NEW and Day-Shift-NEW sheets
+
+**Configuration:** Uses `.env` from toolkit root (JIRA_SERVER_URL, JIRA_PERSONAL_ACCESS_TOKEN)
+
+**Quick setup:**
+```bash
+python3 tools/noc-report-assistant/noc_report_assistant.py --dry-run    # Preview
+python3 tools/noc-report-assistant/noc_report_assistant.py               # Live run
+```
+
+**CLI options:**
+- `--dry-run, -n` — Show changes without saving
+- `--verbose, -v` — Show API call details
+- `--file PATH` — Custom Excel file path (default: `~/Downloads/NOC endshift report.xlsx`)
+
+---
+
 ## 🔐 Security
 
 ### Important Security Notes
@@ -372,7 +403,8 @@ noc-toolkit/
 │   ├── pagerduty-job-extractor/  # Job extractor
 │   ├── pd-monitor/            # Auto-acknowledge monitor
 │   ├── pd-merge/              # Incident merge tool
-│   └── data-freshness/        # DACSCAN freshness report
+│   ├── data-freshness/        # DACSCAN freshness report
+│   └── noc-report-assistant/  # End-of-Shift Excel report tool
 ├── config/                     # Configuration files
 ├── docs/                       # Documentation
 │   ├── PROJECT_DOCS.md        # Architecture docs
@@ -385,29 +417,39 @@ noc-toolkit/
 
 ## 🔄 Version History
 
-### Version 1.2.0 (2026-02-27)
+### Version 0.5.0 (2026-03-03)
+
+- ✅ Integrated NOC Report Assistant (noc-report-assistant v0.1.0)
+- ✅ Sync Jira statuses for existing tickets in End-of-Shift Excel report
+- ✅ Add new ticket rows to "Things to monitor" section with Jira + Slack links
+- ✅ Robust openpyxl handling for merges, hyperlinks, and cell formatting
+
+### Version 0.4.0 (2026-02-27)
 
 - ✅ Integrated Data Freshness Checker (data-freshness v0.1.0)
 - ✅ Automated DACSCAN 15-table report via Databricks SQL REST API
 - ✅ Granular table-level checks with host-count and update_ts verification
 - ✅ HTML report generation with color-coded rows for Slack posting
 
-### Version 1.1.0 (2026-02-26)
+### Version 0.3.0 (2026-02-26)
 
 - ✅ Integrated PagerDuty Incident Merge tool (pd-merge v0.2.0)
 - ✅ Three merge scenarios: same-day, cross-date with Jira, mass failure consolidation
 - ✅ Interactive per-incident selection and skip persistence
 
-### Version 1.0.0 (2026-02-22)
+### Version 0.2.0 (2026-02-25)
+
+- ✅ PyInstaller EXE fixes — tools now work inside compiled binary
+- ✅ Diagnostic debug log on every launch
+
+### Version 0.1.0 (2026-02-22)
 
 **Initial Release**
 
 - ✅ Menu-driven interface
-- ✅ Integrated PagerDuty-Jira Tool
-- ✅ Integrated PagerDuty Job Extractor
-- ✅ Integrated PagerDuty Monitor
+- ✅ Integrated PagerDuty-Jira Tool, Job Extractor, PD Monitor
+- ✅ Centralized configuration via shared `.env`
 - ✅ Tool health checks
-- ✅ Comprehensive documentation
 
 ---
 

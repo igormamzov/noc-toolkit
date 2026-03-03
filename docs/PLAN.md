@@ -1,14 +1,14 @@
 # NOC Toolkit - Development Plan
 
 **Project Start Date:** 2026-02-22
-**Current Version:** 1.2.0
-**Status:** ✅ Phase 1 Complete, Phase 1.5 Complete, data-freshness integrated
+**Current Version:** 0.5.0
+**Status:** ✅ Phase 1 Complete, 6 tools integrated
 
 ---
 
 ## 📊 Project Phases
 
-### Phase 1: Foundation (v1.0.0) ✅ COMPLETED
+### Phase 1: Foundation (v0.1.0) ✅ COMPLETED
 
 **Goal:** Create basic toolkit infrastructure with initial tools
 
@@ -33,7 +33,7 @@
 
 ---
 
-### Phase 2: Enhancement (v1.1.0) 📋 PLANNED
+### Phase 2: Enhancement (v0.6.0+) 📋 PLANNED
 
 **Goal:** Improve user experience and add utility features
 
@@ -53,7 +53,7 @@
 
 ---
 
-### Phase 3: Expansion (v1.2.0) 🔮 FUTURE
+### Phase 3: Expansion (v1.0.0) 🔮 FUTURE
 
 **Goal:** Add more tools and advanced features
 
@@ -180,7 +180,7 @@
 
 ### Long-term Metrics
 
-- Number of integrated tools: 5 (target 5+ by v1.2.0 ✅ achieved)
+- Number of integrated tools: 6 (target 5+ ✅ achieved)
 - User adoption rate: Track active users
 - Time saved: Measure efficiency gains
 - Error rate: Minimize runtime errors

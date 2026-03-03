@@ -3,7 +3,7 @@
 ## 📋 Project Overview
 
 **Project Name:** NOC Toolkit
-**Version:** 1.2.0
+**Version:** 0.5.0
 **Created:** 2026-02-22
 **Purpose:** Unified command-line toolkit for NOC operations, providing a centralized menu-driven interface for various operational tools and scripts.
 
@@ -241,7 +241,7 @@ The toolkit presents an interactive menu:
 
 ```
 ╔════════════════════════════════════════╗
-║         NOC Toolkit v1.0.0             ║
+║         NOC Toolkit v0.5.0             ║
 ╚════════════════════════════════════════╝
 
 Available Tools:
@@ -250,10 +250,11 @@ Available Tools:
   3. PagerDuty Monitor
   4. PagerDuty Incident Merge
   5. Data Freshness Checker
+  6. NOC Report Assistant
 
   0. Exit
 
-Select tool [0-5]:
+Select tool [0-6]:
 ```
 
 ### Adding New Tools
@@ -455,7 +456,16 @@ Logs are stored in the `logs/` directory (created automatically):
 
 ## 🔄 Version History
 
-### Version 1.2.0 (2026-02-27)
+### Version 0.5.0 (2026-03-03)
+
+**New Tool — NOC Report Assistant (noc-report-assistant v0.1.0):**
+- Sync Jira statuses for existing tickets in End-of-Shift Excel report
+- Add new ticket rows to "Things to monitor" section with Jira + Slack links
+- Robust openpyxl handling for merges, hyperlinks, and cell formatting
+- New dependency: openpyxl>=3.1.0
+- Registered as tool #6 in noc-toolkit menu
+
+### Version 0.4.0 (2026-02-27)
 
 **New Tool — Data Freshness Checker (data-freshness v0.1.0):**
 - Automated DACSCAN 15-table freshness report via Databricks SQL REST API
@@ -468,7 +478,7 @@ Logs are stored in the `logs/` directory (created automatically):
 - Registered as tool #5 in noc-toolkit menu
 - No new dependencies — uses `requests` (already bundled)
 
-### Version 1.1.0 (2026-02-26)
+### Version 0.3.0 (2026-02-26)
 
 **New Tool — PagerDuty Incident Merge (pd-merge v0.2.0):**
 - Automated discovery and merging of related PagerDuty incidents by normalized job name
@@ -479,7 +489,7 @@ Logs are stored in the `logs/` directory (created automatically):
 - CLI flags: --dry-run, --verbose, --clear-skips, --show-skips
 - Implements logic documented in skills/pd-merge-logic.md v1.2
 
-### Version 1.0.0 (2026-02-22)
+### Version 0.1.0 (2026-02-22)
 
 **Core Features:**
 - Initial project setup with complete directory structure
