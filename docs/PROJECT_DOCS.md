@@ -68,14 +68,17 @@ noc-toolkit/
 
 **Key Features:**
 - Fetches PagerDuty incidents based on configured filters
-- Creates corresponding Jira issues
-- Updates existing issues with incident status
-- Configurable mapping between PagerDuty and Jira fields
+- Auto-discovers Jira tickets from incident titles and comments
+- Tracks Jira statuses and posts status-update comments
+- Auto-snooze mode with configurable duration
+- Auto-detects "ignore"/"disabled" keywords — posts short comment and snoozes
+- 12-hour duplicate comment guard to prevent comment spam
+- Progress bar with time estimation
 
 **Configuration:**
 - Requires PagerDuty API token
-- Requires Jira credentials (email + API token)
-- Configured via environment variables or `.env` file
+- Requires Jira credentials (PAT or email + API token)
+- Configured via shared `.env` file from toolkit root
 
 ### 2. PagerDuty Job Extractor
 
