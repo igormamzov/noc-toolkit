@@ -136,11 +136,14 @@ Select tool [0-6]:
 
 **Features:**
 - Fetches PagerDuty incidents based on filters
-- Creates corresponding Jira issues
-- Updates existing issues with incident status
-- Configurable field mapping
+- Auto-discovers Jira tickets from incident titles and comments
+- Tracks Jira statuses and posts status-update comments
+- Auto-snooze mode with configurable duration
+- Auto-detects "ignore"/"disabled" keywords — posts short comment and snoozes
+- 12-hour duplicate comment guard to prevent spam
+- Progress bar with time estimation
 
-**Configuration:** See [tools/pd-jira-tool/README.md](tools/pd-jira-tool/README.md)
+**Configuration:** Uses shared `.env` from toolkit root (PAGERDUTY_API_TOKEN + Jira credentials)
 
 **Quick setup:**
 ```bash
