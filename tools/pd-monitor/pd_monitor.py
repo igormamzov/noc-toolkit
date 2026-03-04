@@ -10,6 +10,7 @@ import os
 import sys
 import json
 import argparse
+import random
 import warnings
 import time
 from datetime import datetime, timezone, timedelta
@@ -18,7 +19,39 @@ from typing import Dict, List, Optional, Set
 from dotenv import load_dotenv
 
 # Version information
-VERSION = "0.1.0"
+VERSION = "0.1.1"
+
+# Comment phrases for auto-acknowledge (to look like a real engineer)
+COMMENTS_NORMAL = [
+    "Working on it",
+    "Monitoring now",
+    "Working",
+    "On it",
+    "Checking job",
+    "Checking now",
+    "Checking status",
+    "Looking into it",
+    "Reviewing the alert",
+    "Started working",
+    "Investigating",
+    "Checking",
+    "Checking alert",
+]
+
+COMMENTS_TYPO = [
+    "Investigaing",
+    "Sarted working",
+    "Reviewing alert",
+    "Cheking status",
+    "Chekcing",
+    "Wokring",
+    "Investagating",
+    "Checkign",
+    "Monitornig now",
+    "Workign",
+]
+
+ALL_COMMENTS = COMMENTS_NORMAL + COMMENTS_TYPO
 
 # Suppress pagination warnings from pagerduty package
 warnings.filterwarnings('ignore', message='.*lacks a "more" property.*')
@@ -57,6 +90,7 @@ class PagerDutyMonitor:
         """
         self.pagerduty_session = pagerduty.RestApiV2Client(pagerduty_api_token)
         self.comment_pattern = comment_pattern
+        self.random_comments = (comment_pattern.lower() == "working on it")
         self.check_interval_seconds = check_interval_seconds
         self.output_file = Path(output_file).expanduser()
         self.dry_run = dry_run
@@ -89,6 +123,17 @@ class PagerDutyMonitor:
         except Exception as e:
             print(f"Error: Unable to get user ID: {e}", file=sys.stderr)
             sys.exit(1)
+
+    def _pick_random_comment(self) -> str:
+        """Pick a random comment phrase, with 20% typo chance and 50% lowercase chance."""
+        if random.random() < 0.2:
+            comment = random.choice(COMMENTS_TYPO)
+        else:
+            comment = random.choice(COMMENTS_NORMAL)
+        # 50% chance to lowercase the first character
+        if random.random() < 0.5:
+            comment = comment[0].lower() + comment[1:]
+        return comment
 
     def log_needs_attention(self, incident_id: str, incident_title: str, incident_url: str) -> None:
         """
@@ -161,7 +206,10 @@ class PagerDutyMonitor:
 
     def check_has_working_comment(self, incident_id: str) -> bool:
         """
-        Check if any comment contains the working pattern (case-insensitive).
+        Check if any comment contains a known auto-comment phrase (case-insensitive).
+
+        When random_comments is active, checks all phrases from ALL_COMMENTS.
+        Otherwise falls back to matching the single custom pattern.
 
         Args:
             incident_id: Incident ID
@@ -173,12 +221,21 @@ class PagerDutyMonitor:
         if not notes:
             return False
 
-        # Check all notes for the pattern
-        pattern_lower = self.comment_pattern.lower()
-        for note in notes:
-            content = note.get('content', '').lower()
-            if pattern_lower in content:
-                return True
+        if self.random_comments:
+            # Check all possible auto-comment phrases
+            phrases_lower = [p.lower() for p in ALL_COMMENTS]
+            for note in notes:
+                content = note.get('content', '').lower()
+                for phrase in phrases_lower:
+                    if phrase in content:
+                        return True
+        else:
+            # Original behavior: match single custom pattern
+            pattern_lower = self.comment_pattern.lower()
+            for note in notes:
+                content = note.get('content', '').lower()
+                if pattern_lower in content:
+                    return True
         return False
 
     def add_note_to_incident(self, incident_id: str, note_content: str) -> bool:
@@ -276,20 +333,22 @@ class PagerDutyMonitor:
         has_comments = self.check_has_comments(incident_id)
 
         if not has_comments:
-            # No comments - add "working on it" and acknowledge
+            # No comments - add comment and acknowledge
+            comment_text = self._pick_random_comment() if self.random_comments else self.comment_pattern
+
             if self.dry_run:
                 self.processed_incidents.add(incident_id)
                 return {
                     'success': True,
                     'action': 'new_incident',
-                    'message': f"[DRY RUN] Would add '{self.comment_pattern}' and acknowledge {incident_id}",
+                    'message': f"[DRY RUN] Would add '{comment_text}' and acknowledge {incident_id}",
                     'url': incident_url,
                     'comment_added': True,
                     'logged_to_file': False
                 }
 
             # Add comment
-            if not self.add_note_to_incident(incident_id, self.comment_pattern):
+            if not self.add_note_to_incident(incident_id, comment_text):
                 return {
                     'success': False,
                     'action': 'new_incident',
@@ -314,7 +373,7 @@ class PagerDutyMonitor:
             return {
                 'success': True,
                 'action': 'new_incident',
-                'message': f"Added '{self.comment_pattern}' and acknowledged",
+                'message': f"Added '{comment_text}' and acknowledged",
                 'url': incident_url,
                 'comment_added': True,
                 'logged_to_file': False
@@ -760,7 +819,10 @@ def main() -> None:
     print("=" * 60)
     print("PagerDuty Monitor - Triggered Incident Handler")
     print("=" * 60)
-    print(f"Comment pattern: \"{config['comment_pattern']}\"")
+    if config['comment_pattern'].lower() == 'working on it':
+        print(f"Comment mode: randomized ({len(COMMENTS_NORMAL)} phrases + {len(COMMENTS_TYPO)} typo variants)")
+    else:
+        print(f"Comment pattern: \"{config['comment_pattern']}\"")
     print(f"Mode: {'DRY RUN' if config['dry_run'] else 'LIVE'}")
 
     if args.once:

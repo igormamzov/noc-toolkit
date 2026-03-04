@@ -26,7 +26,7 @@ All components are currently in **0.x.x** version, indicating active development
 | Component                  | Version | Status        | Description                                    |
 |----------------------------|---------|---------------|------------------------------------------------|
 | **noc-toolkit**            | 0.5.0   | Development   | Main toolkit launcher and orchestrator         |
-| **pd-monitor**             | 0.1.0   | Development   | Auto-acknowledge triggered PagerDuty incidents |
+| **pd-monitor**             | 0.1.1   | Development   | Auto-acknowledge triggered PagerDuty incidents |
 | **pd-jira-tool**           | 0.3.1   | Development   | PagerDuty-Jira integration and sync tool       |
 | **pagerduty-job-extractor**| 0.1.0   | Development   | Extract failed job names from PD incidents     |
 | **pd-merge**               | 0.2.0   | Development   | Find and merge related PD incidents by job name|
@@ -63,6 +63,15 @@ print(f"Version: {VERSION}")
 ---
 
 ## Version History
+
+### pd-monitor v0.1.1 (2026-03-04)
+
+**Diversified auto-acknowledge comments:**
+- Randomized comment phrases (13 normal + 10 typo variants) instead of single "working on it"
+- 20% probability of typo variant for natural look
+- 50% probability of lowercase first letter
+- Matching logic updated to detect all phrase variants in existing comments
+- Backward compatible: custom `--pattern` or `MONITOR_COMMENT_PATTERN` still works as before
 
 ### pd-jira-tool v0.3.1 (2026-03-04)
 

@@ -177,17 +177,17 @@ cp .env.example .env
 
 ### 3. PagerDuty Monitor
 
-**Purpose:** Automatically refreshes incident acknowledgments to prevent auto-resolve
+**Purpose:** Automatically acknowledges triggered incidents and posts human-like comments
 
 **Features:**
-- Monitors acknowledged incidents every 10 minutes (via cron)
-- Auto-refreshes acknowledgments before 6-hour timeout
-- Smart logic to avoid comment spam
-- Tracks refresh count per incident
-- Alerts when manual updates needed (3+ refreshes)
+- Auto-acknowledges triggered incidents assigned to current user
+- Randomized comment phrases (13 normal + 10 typo variants) to look like a real engineer
+- 20% typo probability, 50% lowercase probability for natural variation
+- Detects prior auto-comments to avoid duplicates
+- Continuous monitoring with configurable duration and check interval
 - Dry-run mode for safe testing
 
-**Configuration:** See [tools/pd-monitor/README.md](tools/pd-monitor/README.md)
+**Configuration:** Uses shared `.env` from toolkit root (PAGERDUTY_API_TOKEN)
 
 **Quick setup:**
 ```bash
