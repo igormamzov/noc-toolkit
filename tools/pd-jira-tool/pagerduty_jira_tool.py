@@ -14,7 +14,7 @@ from typing import List, Optional, Dict, Any, TextIO
 from datetime import datetime, timedelta, timezone
 
 # Version information
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 
 # Suppress pagination warnings from pagerduty package
 warnings.filterwarnings('ignore', message='.*lacks a "more" property.*')
@@ -36,6 +36,9 @@ class PagerDutyJiraTool:
 
     # Regex pattern to match Jira ticket numbers (e.g., PROJ-123, ABC-4567)
     JIRA_TICKET_PATTERN = re.compile(r'\b([A-Z][A-Z0-9]+-\d+)\b')
+
+    # Keywords that signal an incident can be auto-snoozed without Jira lookup
+    IGNORE_DISABLED_PATTERN = re.compile(r'\b(ignore|disabled)\b', re.IGNORECASE)
 
     def __init__(
         self,
@@ -299,6 +302,18 @@ class PagerDutyJiraTool:
         # Return unique ticket numbers while preserving order
         return list(dict.fromkeys(filtered_matches))
 
+    def _check_ignore_disabled(self, title: str, comments: List[str]) -> Optional[str]:
+        """Check title and recent comments for 'ignore' or 'disabled' keywords.
+
+        Searches title first, then comments in order.  Returns the first
+        matched keyword capitalized ('Ignore' or 'Disabled'), or None.
+        """
+        for text in [title] + comments:
+            match = self.IGNORE_DISABLED_PATTERN.search(text)
+            if match:
+                return match.group(1).capitalize()
+        return None
+
     def get_jira_ticket_status(self, ticket_key: str) -> Optional[Dict[str, str]]:
         """
         Get the status of a Jira ticket.
@@ -530,6 +545,7 @@ class PagerDutyJiraTool:
         resolved_tickets = []
         no_jira_tickets = []
         skipped_recent_comment = []
+        auto_handled_keywords = []
 
         for incident in tqdm(incidents, desc="Processing incidents", unit="incident", disable=not self.quiet_mode):
             incident_id = incident['id']
@@ -542,15 +558,47 @@ class PagerDutyJiraTool:
             self.print_verbose(f"Status: {incident_status}")
             self.print_verbose(f"URL: {incident_url}")
 
+            # Get last 3 comments
+            recent_comments = self.get_recent_comments(incident_id, limit=3)
+
+            # Check for ignore/disabled keywords before Jira lookup
+            keyword = self._check_ignore_disabled(incident_title, recent_comments)
+            if keyword:
+                already_commented = (
+                    user_id
+                    and self.has_recent_comment_from_user(incident_id, user_id, hours_threshold=12.0)
+                )
+                should_snooze_keyword = enable_snooze
+
+                if should_snooze_keyword:
+                    comment = f"{keyword}. Snooze"
+                else:
+                    comment = keyword
+
+                if not already_commented:
+                    self.print_verbose(f"Keyword '{keyword}' detected — posting: {comment}")
+                    self.add_incident_note(incident_id, comment)
+                else:
+                    self.print_verbose(f"Keyword '{keyword}' detected — already commented recently")
+
+                if should_snooze_keyword:
+                    snooze_seconds = int(snooze_duration_hours * 3600)
+                    self.snooze_incident(incident_id, snooze_seconds)
+
+                auto_handled_keywords.append({
+                    'title': incident_title,
+                    'url': incident_url,
+                    'keyword': keyword,
+                })
+                self.print_verbose("")
+                continue
+
             # Check incident title for Jira tickets
             all_jira_tickets = []
             title_tickets = self.extract_jira_ticket_numbers(incident_title)
             if title_tickets:
                 all_jira_tickets.extend(title_tickets)
                 self.print_verbose(f"Found Jira ticket(s) in title: {', '.join(title_tickets)}")
-
-            # Get last 3 comments
-            recent_comments = self.get_recent_comments(incident_id, limit=3)
 
             if recent_comments:
                 # Check all recent comments for Jira tickets
@@ -690,6 +738,15 @@ class PagerDutyJiraTool:
             for item in no_jira_tickets:
                 summary_lines.append(f"  - {item['title']}\n")
                 summary_lines.append(f"    Reason: {item['reason']}\n")
+                summary_lines.append(f"    URL: {item['url']}\n")
+                summary_lines.append("\n")
+
+        if auto_handled_keywords:
+            action_label = "snoozed" if enable_snooze else "commented"
+            summary_lines.append(f"\n🔇 Auto-{action_label} (ignore/disabled keyword): {len(auto_handled_keywords)} incident(s)\n")
+            for item in auto_handled_keywords:
+                summary_lines.append(f"  - {item['title']}\n")
+                summary_lines.append(f"    Keyword: {item['keyword']}\n")
                 summary_lines.append(f"    URL: {item['url']}\n")
                 summary_lines.append("\n")
 

@@ -27,7 +27,7 @@ All components are currently in **0.x.x** version, indicating active development
 |----------------------------|---------|---------------|------------------------------------------------|
 | **noc-toolkit**            | 0.5.0   | Development   | Main toolkit launcher and orchestrator         |
 | **pd-monitor**             | 0.1.0   | Development   | Auto-acknowledge triggered PagerDuty incidents |
-| **pd-jira-tool**           | 0.3.0   | Development   | PagerDuty-Jira integration and sync tool       |
+| **pd-jira-tool**           | 0.3.1   | Development   | PagerDuty-Jira integration and sync tool       |
 | **pagerduty-job-extractor**| 0.1.0   | Development   | Extract failed job names from PD incidents     |
 | **pd-merge**               | 0.2.0   | Development   | Find and merge related PD incidents by job name|
 | **data-freshness**         | 0.1.0   | Development   | DACSCAN data freshness report via Databricks SQL|
@@ -63,6 +63,15 @@ print(f"Version: {VERSION}")
 ---
 
 ## Version History
+
+### pd-jira-tool v0.3.1 (2026-03-04)
+
+**Auto-handle ignore/disabled incidents:**
+- Detect "ignore" or "disabled" keywords in incident title and last 3 comments
+- In --snooze mode: post "Ignore. Snooze" or "Disabled. Snooze" comment and snooze
+- In --update mode: post "Ignore" or "Disabled" comment (no snooze)
+- 12-hour duplicate comment guard; still re-snoozes if timer expired
+- New summary category in output: "Auto-snoozed (ignore/disabled keyword)"
 
 ### NOC Toolkit v0.5.0 (2026-03-03)
 
@@ -205,5 +214,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-03-03
+**Last Updated:** 2026-03-04
 **Maintained by:** NOC Team
