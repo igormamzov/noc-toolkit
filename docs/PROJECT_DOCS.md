@@ -103,15 +103,12 @@ noc-toolkit/
 **Purpose:** Automatically refreshes acknowledgments for PagerDuty incidents to prevent auto-resolve
 
 **Key Features:**
-- Monitors acknowledged incidents every 10 minutes (via cron)
-- Auto-refreshes acknowledgments before 6-hour timeout
-- Smart refresh logic with 4 action types:
-  - `add_working_on_it` - Add "working on it" comment for new incidents
-  - `silent_refresh` - Minimal timestamp comment for tracked incidents
-  - `needs_update` - Flag incidents requiring manual engineer update
-  - `skip` - Skip old incidents without tracking pattern
-- State management via JSON file for tracking refresh counts
-- Configurable thresholds and patterns
+- Auto-acknowledges triggered incidents assigned to current user
+- Randomized comment phrases (13 normal + 10 typo variants) to look like a real engineer
+- 20% typo probability, 50% lowercase probability for natural variation
+- Detects prior auto-comments across all phrase variants to avoid duplicates
+- Continuous monitoring with configurable duration and check interval
+- Custom `--pattern` override disables randomization (backward compatible)
 - Dry-run mode for safe testing
 - Verbose mode for debugging
 
