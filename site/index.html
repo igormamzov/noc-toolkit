@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NOC Toolkit</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛠</text></svg>">
+</head>
+<body>
+    <div class="bg-glow"></div>
+
+    <header>
+        <div class="container">
+            <div class="logo">
+                <span class="logo-icon">⚡</span>
+                <h1>NOC Toolkit</h1>
+            </div>
+            <p class="tagline">A collection of tools for NOC operations — monitoring, alerting, reporting, and data quality.</p>
+            <div class="header-actions">
+                <a href="#downloads" class="btn btn-primary">Download</a>
+                <a href="#tools" class="btn btn-secondary">Browse Tools</a>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section id="downloads" class="container">
+            <h2 class="section-title">Download <span class="version-badge">{{TOOLKIT_VERSION}}</span></h2>
+            {{DOWNLOAD_SECTION}}
+        </section>
+
+        <section id="tools" class="container">
+            <h2 class="section-title">Tools</h2>
+            <div class="tools-grid">
+
+                <div class="tool-card">
+                    <div class="tool-icon">📟</div>
+                    <h3>PD-Jira Tool</h3>
+                    <p>Bridges PagerDuty incidents with Jira tickets. Auto-creates tickets, syncs statuses, and manages snooze/ignore workflows.</p>
+                    <div class="tool-tags">
+                        <span class="tag">PagerDuty</span>
+                        <span class="tag">Jira</span>
+                        <span class="tag">Automation</span>
+                    </div>
+                    <div class="tool-version">{{VERSION_PD_JIRA_TOOL}}</div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-icon">📊</div>
+                    <h3>PagerDuty Job Extractor</h3>
+                    <p>Extracts and summarizes PagerDuty incident data for reporting. Generates clean exports for shift handoffs and trend analysis.</p>
+                    <div class="tool-tags">
+                        <span class="tag">PagerDuty</span>
+                        <span class="tag">Reporting</span>
+                    </div>
+                    <div class="tool-version">{{VERSION_PAGERDUTY_JOB_EXTRACTOR}}</div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-icon">👁️</div>
+                    <h3>PD Monitor</h3>
+                    <p>Real-time PagerDuty monitoring dashboard. Tracks active incidents, SLA timers, and escalation status at a glance.</p>
+                    <div class="tool-tags">
+                        <span class="tag">PagerDuty</span>
+                        <span class="tag">Monitoring</span>
+                        <span class="tag">Real-time</span>
+                    </div>
+                    <div class="tool-version">{{VERSION_PD_MONITOR}}</div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-icon">🔗</div>
+                    <h3>PD Merge</h3>
+                    <p>Bulk-merge related PagerDuty incidents. Reduces noise by consolidating duplicate or related alerts into parent incidents.</p>
+                    <div class="tool-tags">
+                        <span class="tag">PagerDuty</span>
+                        <span class="tag">Incident Management</span>
+                    </div>
+                    <div class="tool-version">{{VERSION_PD_MERGE}}</div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-icon">📈</div>
+                    <h3>Data Freshness Checker</h3>
+                    <p>Monitors data pipeline freshness against SLA deadlines. Checks Databricks tables and generates HTML reports with status indicators.</p>
+                    <div class="tool-tags">
+                        <span class="tag">Databricks</span>
+                        <span class="tag">Data Quality</span>
+                        <span class="tag">SLA</span>
+                    </div>
+                    <div class="tool-version">{{VERSION_DATA_FRESHNESS}}</div>
+                </div>
+
+                <div class="tool-card">
+                    <div class="tool-icon">📝</div>
+                    <h3>NOC Report Assistant</h3>
+                    <p>Automates end-of-shift report generation. Syncs Jira ticket statuses and formats reports for handoff between shifts.</p>
+                    <div class="tool-tags">
+                        <span class="tag">Jira</span>
+                        <span class="tag">Reports</span>
+                        <span class="tag">Automation</span>
+                    </div>
+                    <div class="tool-version">{{VERSION_NOC_REPORT_ASSISTANT}}</div>
+                </div>
+
+            </div>
+        </section>
+
+        <section id="getting-started" class="container">
+            <h2 class="section-title">Getting Started</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Download</h3>
+                        <p>Grab the latest release for your platform from the <a href="#downloads">Downloads</a> section above.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Configure</h3>
+                        <p>Copy <code>.env.example</code> to <code>.env</code> and fill in your API tokens (PagerDuty, Jira, Databricks).</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Run</h3>
+                        <p>Launch the toolkit and select the tool you need from the interactive menu. Each tool can also run standalone.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="features" class="container">
+            <h2 class="section-title">Why NOC Toolkit?</h2>
+            <div class="features-grid">
+                <div class="feature">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Fast Setup</h3>
+                    <p>Single binary — no Python install needed. Just download and run.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Secure</h3>
+                    <p>All credentials stay local in your <code>.env</code> file. Nothing leaves your machine.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🖥️</div>
+                    <h3>Cross-Platform</h3>
+                    <p>Builds available for Windows, macOS, and Linux.</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🧩</div>
+                    <h3>Modular</h3>
+                    <p>Use the full toolkit or run individual tools — your choice.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="changelog" class="container">
+            <h2 class="section-title">Recent Changes</h2>
+            {{CHANGELOG_SECTION}}
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>NOC Toolkit &mdash; Built for operations teams.</p>
+        </div>
+    </footer>
+</body>
+</html>
