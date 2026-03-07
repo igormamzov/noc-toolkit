@@ -38,7 +38,7 @@ except ImportError:
     _ENV_MESSAGE = "Warning: python-dotenv not installed (pip install python-dotenv)"
 
 # Version information
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 TOOLKIT_NAME = "NOC Toolkit"
 
 # Directory paths — tools are bundled inside _MEIPASS, config is next to EXE
@@ -210,6 +210,13 @@ class NOCToolkit:
                 name="NOC Report Assistant",
                 description="Sync Jira statuses into End-of-Shift Excel report",
                 script_path="tools/noc-report-assistant/noc_report_assistant.py",
+                enabled=True
+            ),
+            ToolDefinition(
+                tool_id="pd-escalate",
+                name="PD Escalation Tool",
+                description="Link DRGN→DSSD, transition to Escalated, post PD note",
+                script_path="tools/pd-escalate/pd_escalate.py",
                 enabled=True
             ),
         ]

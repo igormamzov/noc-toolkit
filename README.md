@@ -1,6 +1,6 @@
 # NOC Toolkit
 
-**Version:** 0.5.0
+**Version:** 0.6.0
 **A unified command-line toolkit for NOC operations**
 
 ---
@@ -22,6 +22,7 @@ NOC Toolkit is a menu-driven command-line interface that provides easy access to
   - **PagerDuty Incident Merge** - Find and merge related incidents by job name
   - **Data Freshness Checker** - DACSCAN data freshness report via Databricks SQL
   - **NOC Report Assistant** - Sync Jira statuses into End-of-Shift Excel report
+  - **PD Escalation Tool** - Automate post-DSSD escalation workflow (link DRGN→DSSD, transition, PD note, Slack template)
 - 🚀 **Extensible** - Easy to add new tools
 - ✅ **Health Checks** - Automatically verifies tool availability
 
@@ -81,7 +82,7 @@ When you launch the toolkit, you'll see an interactive menu:
 ```
 ╔════════════════════════════════════════════════════════╗
 ║                                                        ║
-║              NOC Toolkit v0.5.0                        ║
+║              NOC Toolkit v0.6.0║
 ║                                                        ║
 ║         Unified NOC Operations Toolkit                 ║
 ║                                                        ║
@@ -108,11 +109,14 @@ Available Tools:
   6. [✓] NOC Report Assistant
       Sync Jira statuses into End-of-Shift Excel report
 
+  7. [✓] PD Escalation Tool
+      Link DRGN→DSSD, transition to Escalated, post PD note
+
 --------------------------------------------------------
   0. Exit
 ========================================================
 
-Select tool [0-6]:
+Select tool [0-7]:
 ```
 
 ### Menu Navigation
@@ -183,6 +187,7 @@ cp .env.example .env
 - Auto-acknowledges triggered incidents assigned to current user
 - Randomized comment phrases (13 normal + 10 typo variants) to look like a real engineer
 - 20% typo probability, 50% lowercase probability for natural variation
+- Silent acknowledge (no comment) for "Missing" load-status incidents (AUS & NZL, MSP Export, CANADA, Central, East, International)
 - Detects prior auto-comments to avoid duplicates
 - Continuous monitoring with configurable duration and check interval
 - Dry-run mode for safe testing
@@ -210,10 +215,11 @@ crontab -e
 
 **Features:**
 - Automatic grouping of incidents by normalized job name
-- Three merge scenarios: same-day (A), cross-date with Jira validation (B), mass failure consolidation (C)
+- Four merge scenarios: same-day (A), cross-date with Jira validation (B), mass failure consolidation (C), RDS exports "failed to start" (D)
 - Deterministic target selection: real comments > alert priority (Databricks > Monitor > AirFlow) > earliest created
 - Interactive per-group and per-incident confirmation before merging
-- Skip persistence — skipped incidents are remembered across runs
+- Skip persistence — skipped incidents remembered across runs, interactive clear at startup
+- Detailed merge table with PD links, incident titles, and dd:hh:mm age
 - Dry-run mode for safe preview
 
 **Configuration:** Uses shared `.env` from toolkit root (PAGERDUTY_API_TOKEN + optional Jira credentials for Scenario B)
@@ -285,6 +291,36 @@ python3 tools/noc-report-assistant/noc_report_assistant.py               # Live 
 - `--dry-run, -n` — Show changes without saving
 - `--verbose, -v` — Show API call details
 - `--file PATH` — Custom Excel file path (default: `~/Downloads/NOC endshift report.xlsx`)
+
+---
+
+### 7. PD Escalation Tool
+
+**Purpose:** Automate the post-DSSD escalation workflow — link DRGN→DSSD in Jira, transition DRGN to Escalated, post PD note, print Slack template
+
+**Features:**
+- Auto-detects DRGN ticket via PD Jira integration field (`external_references`)
+- Fallback: scans PD incident notes for DRGN-\d+ pattern
+- When DRGN is not found: shows PD URL with instruction to press "Create Jira Issue" button
+- Creates Jira link: DRGN "is blocked by" DSSD
+- Transitions DRGN to "Escalated" status
+- Posts PD note with escalation summary and Jira URL
+- Prints ready-to-paste Slack template for #cds-ops-24x7-int
+- Dry-run mode for safe testing
+
+**Configuration:** Uses shared `.env` from toolkit root (PAGERDUTY_API_TOKEN + Jira credentials)
+
+**Quick setup:**
+```bash
+python3 tools/pd-escalate/pd_escalate.py --pd Q33L5GALLQ3ESB --dssd DSSD-29386 --dry-run    # Preview
+python3 tools/pd-escalate/pd_escalate.py --pd Q33L5GALLQ3ESB --dssd DSSD-29386               # Live run
+```
+
+**CLI options:**
+- `--pd` — PagerDuty incident ID or URL (required)
+- `--dssd` — DSSD ticket key, e.g. DSSD-29386 (required)
+- `--drgn` — DRGN ticket key (optional, auto-detected)
+- `--dry-run, -n` — Simulate without API mutations
 
 ---
 
@@ -407,7 +443,8 @@ noc-toolkit/
 │   ├── pd-monitor/            # Auto-acknowledge monitor
 │   ├── pd-merge/              # Incident merge tool
 │   ├── data-freshness/        # DACSCAN freshness report
-│   └── noc-report-assistant/  # End-of-Shift Excel report tool
+│   ├── noc-report-assistant/  # End-of-Shift Excel report tool
+│   └── pd-escalate/           # Post-DSSD escalation workflow
 ├── config/                     # Configuration files
 ├── docs/                       # Documentation
 │   ├── PROJECT_DOCS.md        # Architecture docs
@@ -419,6 +456,17 @@ noc-toolkit/
 ---
 
 ## 🔄 Version History
+
+### Version 0.6.0 (2026-03-07)
+
+- ✅ Integrated PD Escalation Tool (pd-escalate v0.1.0)
+- ✅ Automate post-DSSD escalation: link DRGN→DSSD, transition to Escalated, PD note, Slack template
+- ✅ Auto-detect DRGN via PD Jira integration field (`external_references`)
+- ✅ Registered as tool #7 in noc-toolkit menu
+
+### noc-report-assistant v0.1.1 (2026-03-07)
+
+- ✅ Fixed hyperlink color: explicit Jira-blue (#0052CC) with underline for ticket and Slack links
 
 ### Version 0.5.0 (2026-03-03)
 

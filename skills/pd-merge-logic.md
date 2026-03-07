@@ -82,6 +82,28 @@ When a **mass failure event** occurs (many unrelated jobs failing simultaneously
    - Incidents with their own separate DSSD/DRGN tickets for unrelated issues
    - Incidents from **before** the mass failure started (check timestamps)
 
+### Scenario D: RDS Export "Failed to Start" Consolidation (Interactive Opt-in)
+
+When RDS exports fail to start, PagerDuty creates an umbrella "failed to start" incident alongside individual export failure incidents. This scenario consolidates them.
+
+**Prerequisites:**
+- User must enable this via interactive prompt (not automatic)
+- At least 2 RDS export incidents must exist
+
+**Logic:**
+1. **Identify RDS export incidents** — title matches `RDS export(s)` after prefix stripping (both singular and plural forms)
+2. **Find the target** — the incident whose stripped title contains "failed to start"
+3. **Validate** — the target must have "Failed to start" confirmed in its notes/comments
+4. **Merge** — all other RDS export incidents are merged into the "failed to start" target
+
+**Title patterns:**
+- Target: `[ERROR] [DATABRICKS] RDS export(s) - failed to start` (may have `Restarted` prefix)
+- Sources: `[ERROR] [DATABRICKS] RDS export(s) <job_name> is failed more than 30 minutes`
+
+**Do NOT merge if:**
+- Target has no "Failed to start" in its notes
+- User declines the interactive prompt
+
 ### DO NOT Merge
 
 - Cross-date incidents where errors are **different root causes** (e.g., old "exceeded run time" from last week + new "batch job failed" from today's mass outage)
@@ -239,6 +261,17 @@ Candidates:
 - `Databricks batch job discovery-attraction step not started on time` (20:26) — dependency chain broken by mass failure → **MERGE** (consequential)
 - `Long Running GoAnywhere Jobs` (17:30) — not Databricks/AirFlow → **DO NOT MERGE**
 
+### Example 7: RDS Exports "failed to start" consolidation (Scenario D)
+
+Target incident:
+- `Restarted [ERROR] [DATABRICKS] RDS exports - failed to start` — has "Failed to start" in notes
+
+Source incidents:
+- `[ERROR] [DATABRICKS] RDS export jb_edw_evt_extended_tkt_type_0053_uk_prod is failed more than 30 minutes` → **MERGE**
+- `[ERROR] [DATABRICKS] RDS export jb_edw_evt_business_location_0034_prod is failed more than 30 minutes` → **MERGE**
+
+**Prerequisites**: User must enable this via interactive option. Target must have "Failed to start" confirmed in its notes/comments.
+
 ---
 
 ## API Reference
@@ -267,3 +300,4 @@ Write operations additionally require:
 - v1.0 (2026-02-26): Initial version. Priority-based target selection (Databricks > Monitor > AirFlow), real comment override, same-day-only merge rule.
 - v1.1 (2026-02-26): Cross-date merge with DSSD/DRGN ticket validation. DSSD/DRGN snooze notes now used as context (not ignored) — fetch Jira ticket, compare errors. Mass failure events block cross-date merges.
 - v1.2 (2026-02-26): Mass failure consolidation (Scenario C). When a mass-failure DSSD exists, merge standalone incidents into it by: strong match (job in DSSD alerts / confirmed error), likely (same time window), consequential (data delayed / step not started). Exclude non-Databricks jobs.
+- v1.3 (2026-03-06): RDS Export "failed to start" consolidation (Scenario D). Interactive opt-in: merges individual `RDS export <job> is failed more than 30 minutes` incidents into the `RDS export(s) - failed to start` umbrella incident. Requires "Failed to start" confirmed in target's notes.
