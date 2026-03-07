@@ -6,7 +6,7 @@
 |------|---------|
 | `noc-engineer.md` | PagerDuty incidents, CDT/Airflow diagnostics, Jira escalation (DRGN/DSSD/COREDATA), Spark UI analysis |
 | `noc-analytics.md` | DACSCAN data freshness report, Databricks table-level checks, SLA monitoring |
-| `pd-merge-logic.md` | PagerDuty incident merge logic: grouping by job name, 3 scenarios (A/B/C), target selection rules, API reference |
+| `pd-merge-logic.md` | PagerDuty incident merge logic: grouping by job name, 4 scenarios (A/B/C/D), target selection rules, API reference |
 
 ## Quick Setup (2 minutes)
 

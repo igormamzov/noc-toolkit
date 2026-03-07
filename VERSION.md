@@ -25,13 +25,14 @@ All components are currently in **0.x.x** version, indicating active development
 
 | Component                  | Version | Status        | Description                                    |
 |----------------------------|---------|---------------|------------------------------------------------|
-| **noc-toolkit**            | 0.5.0   | Development   | Main toolkit launcher and orchestrator         |
-| **pd-monitor**             | 0.1.1   | Development   | Auto-acknowledge triggered PagerDuty incidents |
+| **noc-toolkit**            | 0.6.0   | Development   | Main toolkit launcher and orchestrator         |
+| **pd-monitor**             | 0.1.2   | Development   | Auto-acknowledge triggered PagerDuty incidents |
 | **pd-jira-tool**           | 0.3.1   | Development   | PagerDuty-Jira integration and sync tool       |
 | **pagerduty-job-extractor**| 0.1.0   | Development   | Extract failed job names from PD incidents     |
-| **pd-merge**               | 0.2.0   | Development   | Find and merge related PD incidents by job name|
+| **pd-merge**               | 0.2.2   | Development   | Find and merge related PD incidents by job name|
+| **pd-escalate**            | 0.1.0   | Development   | Post-DSSD escalation workflow automation       |
 | **data-freshness**         | 0.1.0   | Development   | DACSCAN data freshness report via Databricks SQL|
-| **noc-report-assistant**   | 0.1.0   | Development   | Sync Jira statuses into End-of-Shift Excel report|
+| **noc-report-assistant**   | 0.1.1   | Development   | Sync Jira statuses into End-of-Shift Excel report|
 
 ---
 
@@ -64,6 +65,44 @@ print(f"Version: {VERSION}")
 
 ## Version History
 
+### NOC Toolkit v0.6.0 (2026-03-07)
+
+**New tool — PD Escalation Tool (pd-escalate v0.1.0):**
+- Automates post-DSSD escalation workflow: link DRGN→DSSD, transition DRGN to Escalated, post PD note, print Slack template
+- Auto-detects DRGN ticket via PD Jira integration field (`external_references`) with notes fallback
+- When DRGN is not found: shows PD incident URL with instruction to manually press "Create Jira Issue" button
+- CLI: `--pd` (incident ID or URL), `--dssd` (required), `--drgn` (optional), `--dry-run`
+- No new dependencies — reuses `pagerduty` + `jira` libs already in requirements.txt
+- Registered as tool #7 in noc-toolkit menu
+
+### pd-escalate v0.1.0 (2026-03-07)
+
+**Initial release:**
+- `EscalateTool` class with 8-step workflow: resolve PD user → fetch incident → detect DRGN → fetch DSSD → link Jira issues → transition DRGN → add PD note → print Slack template
+- DRGN detection via `GET /incidents/{id}?include[]=external_references` (PD Jira integration field)
+- Fallback DRGN detection by scanning PD incident notes for `DRGN-\d+` pattern
+- Jira link creation: DRGN "is blocked by" DSSD via `create_issue_link(type="Blocks")`
+- DRGN transition to "Escalated" status (transition ID 51)
+- PD note with escalation summary + Jira URL
+- Slack template output for #cds-ops-24x7-int with hyperlink instructions
+- Dry-run mode for safe testing
+
+### noc-report-assistant v0.1.1 (2026-03-07)
+
+**Hyperlink color fix:**
+- Explicit Jira-blue (#0052CC) font color with underline for hyperlink cells (columns D and F)
+- Previously link color depended on reference row styling in the Excel template
+- New `_apply_hyperlink_font` helper ensures consistent link appearance regardless of template
+
+### pd-monitor v0.1.2 (2026-03-07)
+
+**Silent acknowledge for "Missing" load-status incidents:**
+- New `SILENT_ACK_PATTERNS` list: 6 title patterns (Missing AUS & NZL, Missing MSP Export, Missing CANADA, Missing Central, Missing East, Missing International)
+- Incidents matching these patterns are acknowledged without posting a comment
+- New `_is_silent_ack()` method for case-insensitive substring matching
+- Separate `silent_ack` counter in summary output
+- All other incidents processed as before (with comment)
+
 ### pd-monitor v0.1.1 (2026-03-04)
 
 **Diversified auto-acknowledge comments:**
@@ -72,6 +111,24 @@ print(f"Version: {VERSION}")
 - 50% probability of lowercase first letter
 - Matching logic updated to detect all phrase variants in existing comments
 - Backward compatible: custom `--pattern` or `MONITOR_COMMENT_PATTERN` still works as before
+
+### pd-merge v0.2.2 (2026-03-07)
+
+**UI/UX improvements for merge table and skip list:**
+- Table: incident ID replaced with full PagerDuty link (clickable in terminal)
+- Table: new "Title" column showing stripped incident name
+- Table: "Alert Type" shows "RDS Exports" instead of "Unknown" for RDS export incidents
+- Table: "Age" column in dd:hh:mm format (time since creation) instead of creation time
+- Interactive skip list clear: prompt to clear skip list at startup (no need for --clear-skips flag)
+
+### pd-merge v0.2.1 (2026-03-06)
+
+**RDS Export "failed to start" consolidation (Scenario D):**
+- New interactive merge option for RDS export incidents
+- Merges individual `RDS export <job> is failed more than 30 minutes` into `RDS export(s) - failed to start` umbrella
+- Validates "Failed to start" in target's notes/comments before merging
+- Interactive opt-in: option shown only when 2+ RDS export incidents detected
+- Updated pd-merge-logic.md to v1.3
 
 ### pd-jira-tool v0.3.1 (2026-03-04)
 
@@ -223,5 +280,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-03-04
+**Last Updated:** 2026-03-07
 **Maintained by:** NOC Team

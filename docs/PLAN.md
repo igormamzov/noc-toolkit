@@ -1,8 +1,8 @@
 # NOC Toolkit - Development Plan
 
 **Project Start Date:** 2026-02-22
-**Current Version:** 0.5.0
-**Status:** ✅ Phase 1 Complete, 6 tools integrated
+**Current Version:** 0.6.0
+**Status:** ✅ Phase 1 Complete, 7 tools integrated
 
 ---
 
@@ -180,7 +180,7 @@
 
 ### Long-term Metrics
 
-- Number of integrated tools: 6 (target 5+ ✅ achieved)
+- Number of integrated tools: 7 (target 5+ ✅ achieved)
 - User adoption rate: Track active users
 - Time saved: Measure efficiency gains
 - Error rate: Minimize runtime errors
@@ -189,6 +189,60 @@
 ---
 
 ## 🔄 Change Log
+
+### 2026-03-07 (pd-monitor v0.1.2 — Silent acknowledge for Missing incidents)
+
+**✅ Completed — Silent ack for load-status "Missing" incidents:**
+- New `SILENT_ACK_PATTERNS` list: 6 title patterns (Missing AUS & NZL, MSP Export, CANADA, Central, East, International)
+- Matching incidents are acknowledged without posting a comment
+- New `_is_silent_ack()` static method with case-insensitive substring matching
+- New `silent_ack` action type and summary counter
+- Version bump: 0.1.1 → 0.1.2
+
+### 2026-03-07 (pd-merge v0.2.2 — UI/UX improvements)
+
+**✅ Completed — Merge table and skip list improvements:**
+- Table: incident ID replaced with full PagerDuty link (clickable in terminal)
+- Table: new "Title" column showing stripped incident name (without `[ERROR] [DATABRICKS]` prefixes)
+- Table: "Alert Type" shows "RDS Exports" instead of "Unknown" for RDS export incidents
+- Table: "Age" column in `dd:hh:mm` format (incident age) instead of creation time `HH:MM`
+- Interactive skip list clear prompt at startup — no need for `--clear-skips` CLI flag
+- Version bump: 0.2.1 → 0.2.2
+
+### 2026-03-07 (pd-escalate v0.1.0 — Escalation Workflow Tool)
+
+**✅ Completed — PD Escalation Tool (pd-escalate v0.1.0):**
+- Created `tools/pd-escalate/pd_escalate.py` — automates post-DSSD escalation workflow
+- `EscalateTool` class with 8-step workflow: resolve PD user → fetch incident → detect DRGN → fetch DSSD → link Jira issues → transition DRGN → add PD note → print Slack template
+- DRGN auto-detection via `GET /incidents/{id}?include[]=external_references` (PD Jira integration field)
+- Fallback: scans PD incident notes for `DRGN-\d+` pattern
+- When DRGN not found: shows PD incident URL + instruction to manually press "Create Jira Issue" button
+- Jira link creation: DRGN "is blocked by" DSSD via `create_issue_link(type="Blocks")`
+- DRGN transition to "Escalated" status (transition ID 51)
+- PD note with `From` header (user email resolved from API token)
+- Slack template output for #cds-ops-24x7-int with hyperlink instructions
+- CLI: `--pd` (ID or URL), `--dssd` (required), `--drgn` (optional), `--dry-run`
+- Registered as tool #7 in noc-toolkit menu
+- No new dependencies — reuses `pagerduty` + `jira` libs
+- Toolkit version bumped: 0.5.0 → 0.6.0
+- Updated all documentation: README.md, README_RU.md, VERSION.md, PROJECT_DOCS.md, PLAN.md
+
+**Tested:**
+- Dry-run on 23 user-assigned PD incidents — all passed cleanly
+- With-DRGN path: detects via `external_references`, proceeds through all 8 steps
+- No-DRGN path: clean exit with PD URL and manual button instruction
+- No EOFError in non-interactive/batch mode
+
+### 2026-03-06 (pd-merge v0.2.1 — Scenario D)
+
+**✅ Completed — RDS Export "failed to start" consolidation:**
+- Added Scenario D to `tools/pd-merge/pd_merge.py`: merges individual `RDS export <job> is failed more than 30 minutes` incidents into the `RDS export(s) - failed to start` umbrella incident
+- Interactive opt-in: option shown only when 2+ RDS export incidents detected
+- Validates "Failed to start" in target's notes/comments before merging
+- New regex constants: `RDS_EXPORT_RE`, `RDS_FAILED_TO_START_RE`
+- New method: `build_rds_exports_group()`
+- Updated `pd-merge-logic.md` to v1.3 (added Scenario D, Example 7)
+- Version bump: 0.2.0 → 0.2.1
 
 ### 2026-02-27 (data-freshness Tool Integration)
 
@@ -370,5 +424,5 @@ For questions or issues with the toolkit:
 
 ---
 
-**Last Updated:** 2026-02-27 by Claude
+**Last Updated:** 2026-03-07 by Claude
 **Next Review:** After Phase 2 planning

@@ -19,7 +19,19 @@ from typing import Dict, List, Optional, Set
 from dotenv import load_dotenv
 
 # Version information
-VERSION = "0.1.1"
+VERSION = "0.1.2"
+
+# Title patterns for silent acknowledge (ack only, no comment).
+# If an incident title contains any of these substrings (case-insensitive),
+# the monitor will acknowledge it without posting a comment.
+SILENT_ACK_PATTERNS = [
+    "Missing AUS & NZL",
+    "Missing MSP Export",
+    "Missing CANADA",
+    "Missing Central",
+    "Missing East",
+    "Missing International",
+]
 
 # Comment phrases for auto-acknowledge (to look like a real engineer)
 COMMENTS_NORMAL = [
@@ -123,6 +135,15 @@ class PagerDutyMonitor:
         except Exception as e:
             print(f"Error: Unable to get user ID: {e}", file=sys.stderr)
             sys.exit(1)
+
+    @staticmethod
+    def _is_silent_ack(title: str) -> bool:
+        """Check if the incident title matches a silent-acknowledge pattern.
+
+        Returns True if the incident should be acknowledged without posting a comment.
+        """
+        title_lower = title.lower()
+        return any(pattern.lower() in title_lower for pattern in SILENT_ACK_PATTERNS)
 
     def _pick_random_comment(self) -> str:
         """Pick a random comment phrase, with 20% typo chance and 50% lowercase chance."""
@@ -332,8 +353,11 @@ class PagerDutyMonitor:
         # Check if incident has any comments
         has_comments = self.check_has_comments(incident_id)
 
-        if not has_comments:
-            # No comments - add comment and acknowledge
+        # Silent-ack incidents: acknowledge only, never post a comment
+        silent = self._is_silent_ack(incident_title)
+
+        if not has_comments and not silent:
+            # No comments and not a silent-ack pattern — add comment and acknowledge
             comment_text = self._pick_random_comment() if self.random_comments else self.comment_pattern
 
             if self.dry_run:
@@ -376,6 +400,38 @@ class PagerDutyMonitor:
                 'message': f"Added '{comment_text}' and acknowledged",
                 'url': incident_url,
                 'comment_added': True,
+                'logged_to_file': False
+            }
+        elif not has_comments and silent:
+            # Silent-ack pattern — acknowledge without posting a comment
+            if self.dry_run:
+                self.processed_incidents.add(incident_id)
+                return {
+                    'success': True,
+                    'action': 'silent_ack',
+                    'message': f"[DRY RUN] Would acknowledge {incident_id} (silent-ack pattern, no comment)",
+                    'url': incident_url,
+                    'comment_added': False,
+                    'logged_to_file': False
+                }
+
+            if not self.acknowledge_incident(incident_id):
+                return {
+                    'success': False,
+                    'action': 'silent_ack',
+                    'message': f"Failed to acknowledge {incident_id}",
+                    'url': incident_url,
+                    'comment_added': False,
+                    'logged_to_file': False
+                }
+
+            self.processed_incidents.add(incident_id)
+            return {
+                'success': True,
+                'action': 'silent_ack',
+                'message': f"Acknowledged (silent-ack, no comment)",
+                'url': incident_url,
+                'comment_added': False,
                 'logged_to_file': False
             }
         else:
@@ -468,6 +524,7 @@ class PagerDutyMonitor:
                 'new_incidents': 0,
                 'needs_attention': 0,
                 'acknowledged': 0,
+                'silent_ack': 0,
                 'already_processed': 0,
                 'errors': []
             }
@@ -477,6 +534,7 @@ class PagerDutyMonitor:
             'new_incidents': 0,
             'needs_attention': 0,
             'acknowledged': 0,
+            'silent_ack': 0,
             'already_processed': 0,
             'errors': []
         }
@@ -509,6 +567,8 @@ class PagerDutyMonitor:
                     summary['new_incidents'] += 1
                 elif result['action'] == 'needs_attention':
                     summary['needs_attention'] += 1
+                elif result['action'] == 'silent_ack':
+                    summary['silent_ack'] += 1
                 elif result['action'] == 'acknowledge_only':
                     summary['acknowledged'] += 1
             else:
@@ -586,6 +646,8 @@ class PagerDutyMonitor:
                     print(f"\n  Found {summary['total']} triggered incident(s)")
                     if summary['new_incidents'] > 0:
                         print(f"  ✓ New incidents (comment added): {summary['new_incidents']}")
+                    if summary['silent_ack'] > 0:
+                        print(f"  ✓ Silent ack (no comment): {summary['silent_ack']}")
                     if summary['acknowledged'] > 0:
                         print(f"  ✓ Acknowledged (no comment): {summary['acknowledged']}")
                     if summary['needs_attention'] > 0:
@@ -846,6 +908,7 @@ def main() -> None:
             print("=" * 60)
             print(f"Total triggered incidents: {summary['total']}")
             print(f"New incidents (comment added): {summary['new_incidents']}")
+            print(f"Silent ack (no comment): {summary['silent_ack']}")
             print(f"Acknowledged (no comment): {summary['acknowledged']}")
             print(f"Need attention (logged to file): {summary['needs_attention']}")
             print(f"Errors: {len(summary['errors'])}")

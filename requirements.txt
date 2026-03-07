@@ -17,6 +17,8 @@ jira>=3.5.0  # Jira Python library for REST API
 # User interface
 # --------------
 tqdm>=4.65.0  # Progress bars for visual feedback
+customtkinter>=5.2.0  # Modern themed Tkinter widgets for GUI launcher
+Pillow>=10.0.0  # Image support (customtkinter dependency)
 
 # Excel report manipulation
 # ------------------------

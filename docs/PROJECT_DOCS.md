@@ -3,7 +3,7 @@
 ## 📋 Project Overview
 
 **Project Name:** NOC Toolkit
-**Version:** 0.5.0
+**Version:** 0.6.0
 **Created:** 2026-02-22
 **Purpose:** Unified command-line toolkit for NOC operations, providing a centralized menu-driven interface for various operational tools and scripts.
 
@@ -35,8 +35,12 @@ noc-toolkit/
 │   │   └── pd_monitor.py
 │   ├── pd-merge/              # PagerDuty incident merge
 │   │   └── pd_merge.py
-│   └── data-freshness/        # DACSCAN data freshness report
-│       └── data_freshness.py
+│   ├── data-freshness/        # DACSCAN data freshness report
+│   │   └── data_freshness.py
+│   ├── noc-report-assistant/  # End-of-Shift Excel report tool
+│   │   └── noc_report_assistant.py
+│   └── pd-escalate/           # Post-DSSD escalation workflow
+│       └── pd_escalate.py
 ├── config/                     # Configuration files
 │   ├── .env.example           # Example environment variables
 │   └── tools.json             # Tool registry and metadata
@@ -106,6 +110,7 @@ noc-toolkit/
 - Auto-acknowledges triggered incidents assigned to current user
 - Randomized comment phrases (13 normal + 10 typo variants) to look like a real engineer
 - 20% typo probability, 50% lowercase probability for natural variation
+- Silent acknowledge (no comment) for "Missing" load-status incidents (AUS & NZL, MSP Export, CANADA, Central, East, International)
 - Detects prior auto-comments across all phrase variants to avoid duplicates
 - Continuous monitoring with configurable duration and check interval
 - Custom `--pattern` override disables randomization (backward compatible)
@@ -140,19 +145,22 @@ Designed to run every 10 minutes via cron:
 
 **Location:** `tools/pd-merge/`
 **Main Script:** `pd_merge.py`
-**Version:** 0.2.0
+**Version:** 0.2.2
 **Purpose:** Find and merge related PagerDuty incidents that share the same root cause (same job/DAG name)
 
 **Key Features:**
 - Automatic grouping of incidents by normalized job name
-- Three merge scenarios:
+- Four merge scenarios:
   - **Scenario A:** Same-day incidents — merge by alert priority
   - **Scenario B:** Cross-date with DSSD/DRGN ticket — validate via Jira before merging
   - **Scenario C:** Mass failure consolidation — merge standalone incidents into mass-failure DSSD
+  - **Scenario D:** RDS exports "failed to start" — merge individual RDS export failures into umbrella incident (interactive opt-in)
 - Deterministic target selection: real comments > alert priority (Databricks > Monitor > AirFlow) > earliest created
 - Interactive per-group and per-incident confirmation before merging
 - Skip persistence — skipped incidents remembered across runs via JSON file
 - Dry-run mode for safe preview
+- Detailed merge table with clickable PD links, incident titles, and dd:hh:mm age format
+- Interactive skip list management at startup (clear without --clear-skips flag)
 
 **Alert Type Priority:**
 
@@ -224,6 +232,61 @@ Designed to run every 10 minutes via cron:
 - HTML report saved as `freshness-report-YYYY-MM-DD.html`, auto-opened via `webbrowser.open()`
 - Three color states: met (white/green), delayed (red background), fresh-but-metadata-lagging (yellow)
 
+### 6. NOC Report Assistant
+
+**Location:** `tools/noc-report-assistant/`
+**Main Script:** `noc_report_assistant.py`
+**Version:** 0.1.1
+**Purpose:** Sync Jira statuses and add ticket rows to the End-of-Shift Excel report
+
+**Key Features:**
+- Sync statuses — update Jira statuses (column E) for all existing tickets
+- Add row — insert a new ticket to "Things to monitor" section with Jira + Slack links
+- Auto-detects Jira and Slack links in any paste order
+- Preserves all Excel formatting, merges, and hyperlinks
+- Works with both Night-Shift-NEW and Day-Shift-NEW sheets
+
+**Configuration:**
+- Requires Jira credentials via environment variables:
+  - `JIRA_SERVER_URL`
+  - `JIRA_PERSONAL_ACCESS_TOKEN`
+
+### 7. PD Escalation Tool
+
+**Location:** `tools/pd-escalate/`
+**Main Script:** `pd_escalate.py`
+**Version:** 0.1.0
+**Purpose:** Automate the post-DSSD escalation workflow — link DRGN→DSSD, transition DRGN to Escalated, post PD note, print Slack template
+
+**Key Features:**
+- 8-step workflow: resolve PD user → fetch incident → detect DRGN → fetch DSSD → link Jira issues → transition DRGN → add PD note → print Slack template
+- DRGN auto-detection via PD Jira integration field (`GET /incidents/{id}?include[]=external_references`)
+- Fallback: scans PD incident notes for `DRGN-\d+` pattern
+- When DRGN is not found: shows PD incident URL with instruction to manually press "Create Jira Issue" button
+- Jira link creation: DRGN "is blocked by" DSSD via `create_issue_link(type="Blocks")`
+- DRGN transition to "Escalated" status (transition ID 51)
+- PD note posting with `From` header (user email)
+- Slack template output for #cds-ops-24x7-int
+
+**Configuration:**
+- Requires PagerDuty API token (write access for notes)
+- Requires Jira credentials (PAT for link creation and transitions)
+- Configured via shared `.env` file from toolkit root
+
+**CLI Options:**
+- `--pd` — PagerDuty incident ID or URL (required)
+- `--dssd` — DSSD ticket key, e.g. DSSD-29386 (required)
+- `--drgn` — DRGN ticket key (optional, auto-detected)
+- `--dry-run, -n` — Simulate without API mutations
+- `--version, -v` — Show version
+
+**Technical Details:**
+- `EscalateTool` class following patterns from `pd_merge.py` (PD client init, user resolution, note posting)
+- Jira PAT auth pattern from `pagerduty_jira_tool.py`: `JIRA(server=url, token_auth=pat)`
+- Incident ID extraction from URL pattern from `extract_jobs.py`
+- `external_references` field requires `include[]` parameter on PD API call
+- No new dependencies — reuses `pagerduty` + `jira` libs
+
 ---
 
 ## 🚀 Usage
@@ -241,7 +304,7 @@ The toolkit presents an interactive menu:
 
 ```
 ╔════════════════════════════════════════╗
-║         NOC Toolkit v0.5.0             ║
+║         NOC Toolkit v0.6.0             ║
 ╚════════════════════════════════════════╝
 
 Available Tools:
@@ -251,10 +314,11 @@ Available Tools:
   4. PagerDuty Incident Merge
   5. Data Freshness Checker
   6. NOC Report Assistant
+  7. PD Escalation Tool
 
   0. Exit
 
-Select tool [0-6]:
+Select tool [0-7]:
 ```
 
 ### Adding New Tools
@@ -380,6 +444,20 @@ def _load_tools(self) -> None:
             script_path="tools/data-freshness/data_freshness.py",
             enabled=True
         ),
+        ToolDefinition(
+            tool_id="noc-report-assistant",
+            name="NOC Report Assistant",
+            description="Sync Jira statuses into End-of-Shift Excel report",
+            script_path="tools/noc-report-assistant/noc_report_assistant.py",
+            enabled=True
+        ),
+        ToolDefinition(
+            tool_id="pd-escalate",
+            name="PD Escalation Tool",
+            description="Link DRGN→DSSD, transition to Escalated, post PD note",
+            script_path="tools/pd-escalate/pd_escalate.py",
+            enabled=True
+        ),
     ]
 ```
 
@@ -456,6 +534,22 @@ Logs are stored in the `logs/` directory (created automatically):
 
 ## 🔄 Version History
 
+### Version 0.6.0 (2026-03-07)
+
+**New Tool — PD Escalation Tool (pd-escalate v0.1.0):**
+- Automates post-DSSD escalation workflow: link DRGN→DSSD, transition DRGN to Escalated, post PD note, print Slack template
+- Auto-detects DRGN via PD Jira integration field (`external_references`) with notes fallback
+- When DRGN not found: shows PD URL with instruction to manually press "Create Jira Issue" button
+- CLI: `--pd`, `--dssd`, `--drgn` (optional), `--dry-run`
+- Registered as tool #7 in noc-toolkit menu
+- No new dependencies
+
+### noc-report-assistant v0.1.1 (2026-03-07)
+
+**Hyperlink color fix:**
+- Explicit Jira-blue (#0052CC) font color with underline for hyperlink cells (columns D and F)
+- New `_apply_hyperlink_font` helper ensures consistent link appearance regardless of Excel template
+
 ### Version 0.5.0 (2026-03-03)
 
 **New Tool — NOC Report Assistant (noc-report-assistant v0.1.0):**
@@ -482,12 +576,12 @@ Logs are stored in the `logs/` directory (created automatically):
 
 **New Tool — PagerDuty Incident Merge (pd-merge v0.2.0):**
 - Automated discovery and merging of related PagerDuty incidents by normalized job name
-- Three merge scenarios: same-day (A), cross-date with Jira validation (B), mass failure consolidation (C)
+- Four merge scenarios: same-day (A), cross-date with Jira validation (B), mass failure consolidation (C), RDS exports "failed to start" (D)
 - Deterministic target selection: real comments > alert priority > earliest created
 - Interactive per-group and per-incident confirmation
 - Skip persistence across runs via JSON file
 - CLI flags: --dry-run, --verbose, --clear-skips, --show-skips
-- Implements logic documented in skills/pd-merge-logic.md v1.2
+- Implements logic documented in skills/pd-merge-logic.md v1.3
 
 ### Version 0.1.0 (2026-02-22)
 
@@ -539,4 +633,4 @@ Internal tool for organizational use only.
 
 ---
 
-**Last Updated:** 2026-02-27
+**Last Updated:** 2026-03-07

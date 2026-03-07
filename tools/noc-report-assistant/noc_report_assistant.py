@@ -23,14 +23,19 @@ except ImportError:
 
 try:
     from openpyxl import load_workbook
+    from openpyxl.styles import Font as _OpenpyxlFont
+    from openpyxl.styles.colors import Color as _OpenpyxlColor
 except ImportError:
     print("[ERROR] openpyxl required: pip install openpyxl")
     sys.exit(1)
 
+# Jira-style link color (#0052CC)
+_HYPERLINK_COLOR = _OpenpyxlColor(rgb="FF0052CC")
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 DEFAULT_REPORT_PATH = "~/Downloads/NOC endshift report.xlsx"
 SHEETS = ["Night-Shift-NEW", "Day-Shift-NEW"]
@@ -253,6 +258,7 @@ class NOCReportAssistant:
         _copy_cell_style(
             worksheet.cell(row=reference_row, column=4), cell_d,
         )
+        _apply_hyperlink_font(cell_d)
 
         # E: STATUS Assignee
         status_string = self._build_status_string(jira_status, jira_assignee, "")
@@ -269,6 +275,7 @@ class NOCReportAssistant:
         _copy_cell_style(
             worksheet.cell(row=reference_row, column=6), cell_f,
         )
+        _apply_hyperlink_font(cell_f)
 
         # Columns G+ : copy fill from reference row so inserted rows don't
         # appear as black bars in Numbers/Excel (insert_rows leaves them empty).
@@ -361,6 +368,21 @@ def _copy_cell_style(source_cell, target_cell) -> None:
         target_cell.border = copy(source_cell.border)
         target_cell.alignment = copy(source_cell.alignment)
         target_cell.number_format = source_cell.number_format
+
+
+def _apply_hyperlink_font(cell) -> None:
+    """Override font color to Jira-blue (#0052CC) with single underline for hyperlink cells."""
+    old_font = cell.font
+    cell.font = _OpenpyxlFont(
+        name=old_font.name,
+        size=old_font.size,
+        bold=old_font.bold,
+        italic=old_font.italic,
+        underline="single",
+        color=_HYPERLINK_COLOR,
+        strikethrough=old_font.strikethrough,
+        vertAlign=old_font.vertAlign,
+    )
 
 
 def _remove_hyperlinks_in_range(

@@ -9,6 +9,7 @@ Merge logic based on pd-merge-logic.md v1.2:
 - Scenario A: Same-day incidents with same job name
 - Scenario B: Cross-date incidents with DSSD/DRGN ticket validation via Jira
 - Scenario C: Mass failure consolidation into a DSSD incident
+- Scenario D: RDS Export "failed to start" consolidation (interactive opt-in)
 """
 
 import json
@@ -22,7 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 # Version information
-VERSION = "0.2.0"
+VERSION = "0.2.2"
 
 # Skip file: stores incident IDs that the user explicitly skipped,
 # so they don't reappear on subsequent runs.
@@ -98,6 +99,11 @@ CONSEQUENTIAL_RE = re.compile(
     r'(?:data\s+delayed|step\s+not\s+started\s+on\s+time)',
     re.IGNORECASE,
 )
+
+# RDS Export "failed to start" consolidation (Scenario D)
+# Matches both "RDS export" and "RDS exports" (used interchangeably in titles)
+RDS_EXPORT_RE = re.compile(r'^RDS\s+exports?\b', re.IGNORECASE)
+RDS_FAILED_TO_START_RE = re.compile(r'failed\s+to\s+start', re.IGNORECASE)
 
 # PagerDuty web UI base URL
 PD_BASE_URL = "https://yourcompany.pagerduty.com/incidents"
@@ -665,6 +671,90 @@ class PagerDutyMergeTool:
         return group
 
     # ------------------------------------------------------------------
+    # Scenario D: RDS Export "failed to start" consolidation
+    # ------------------------------------------------------------------
+
+    def build_rds_exports_group(
+        self,
+        all_incidents: List[ParsedIncident],
+    ) -> Optional[MergeGroup]:
+        """
+        Build a Scenario D merge group: find all RDS export incidents and
+        merge individual failures into the "failed to start" umbrella incident.
+
+        The target must have "Failed to start" confirmed in its notes.
+
+        Returns:
+            MergeGroup if a valid group was built, None otherwise.
+        """
+        # Find all RDS export incidents (including unknown alert types)
+        rds_incidents: List[ParsedIncident] = []
+        for inc in all_incidents:
+            stripped_title, _ = self._strip_prefix(inc.title)
+            if RDS_EXPORT_RE.match(stripped_title):
+                rds_incidents.append(inc)
+
+        if len(rds_incidents) < 2:
+            return None
+
+        # Find target: the "failed to start" incident
+        target: Optional[ParsedIncident] = None
+        for inc in rds_incidents:
+            stripped_title, _ = self._strip_prefix(inc.title)
+            if RDS_FAILED_TO_START_RE.search(stripped_title):
+                target = inc
+                break
+
+        if target is None:
+            self._log("Scenario D: no 'failed to start' target found among RDS export incidents")
+            return None
+
+        # Validate: target must have "Failed to start" in its notes
+        self.fetch_and_classify_notes(target)
+        has_failed_to_start_note = any(
+            RDS_FAILED_TO_START_RE.search(note)
+            for note in target.real_notes + target.context_notes
+        )
+        # Also check ignored notes (raw content) via all notes
+        if not has_failed_to_start_note:
+            try:
+                notes = list(self.pd_client.list_all(
+                    f"incidents/{target.incident_id}/notes"
+                ))
+                has_failed_to_start_note = any(
+                    RDS_FAILED_TO_START_RE.search(note.get('content', ''))
+                    for note in notes
+                )
+            except pagerduty.Error as error:
+                self._log(f"Scenario D: failed to re-fetch notes for validation: {error}")
+
+        if not has_failed_to_start_note:
+            self._log(
+                f"Scenario D: target {target.incident_id} has no "
+                f"'Failed to start' in notes — skipping"
+            )
+            return None
+
+        # Build sources: all other RDS export incidents
+        sources = [inc for inc in rds_incidents if inc.incident_id != target.incident_id]
+
+        if not sources:
+            return None
+
+        group = MergeGroup(
+            group_key="RDS Exports — failed to start",
+            incidents=[target] + sources,
+            target=target,
+            sources=sources,
+            scenario="D",
+        )
+        self._log(
+            f"Scenario D: built RDS exports group — "
+            f"target={target.incident_id}, {len(sources)} source(s)"
+        )
+        return group
+
+    # ------------------------------------------------------------------
     # Step 4: Notes fetch and classification
     # ------------------------------------------------------------------
 
@@ -936,12 +1026,20 @@ class PagerDutyMergeTool:
 
     @staticmethod
     def _format_time(iso_str: str) -> str:
-        """Extract HH:MM from ISO 8601 datetime string."""
+        """Format incident age as dd:hh:mm from creation to now."""
         try:
             dt = datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
-            return dt.strftime('%H:%M')
+            now = datetime.now(timezone.utc)
+            delta = now - dt
+            total_seconds = int(delta.total_seconds())
+            if total_seconds < 0:
+                total_seconds = 0
+            days: int = total_seconds // 86400
+            hours: int = (total_seconds % 86400) // 3600
+            minutes: int = (total_seconds % 3600) // 60
+            return f"{days:02d}:{hours:02d}:{minutes:02d}"
         except (ValueError, AttributeError):
-            return '??:??'
+            return '??:??:??'
 
     @staticmethod
     def _format_date(iso_str: str) -> str:
@@ -980,12 +1078,12 @@ class PagerDutyMergeTool:
         show_date = not self._all_same_day(group.incidents)
 
         # Build table data
-        headers = ["Role", "ID", "Alert Type", "P", "Notes", "Time"]
-        min_widths = [7, 16, 30, 1, 5, 5]
+        headers = ["Role", "Link", "Title", "Alert Type", "P", "Notes", "Age"]
+        min_widths = [7, 4, 10, 30, 1, 5, 8]
 
         if show_date:
-            headers.insert(5, "Date")
-            min_widths.insert(5, 5)
+            headers.insert(6, "Date")
+            min_widths.insert(6, 5)
 
         rows: List[List[str]] = []
         for inc in group.incidents:
@@ -993,11 +1091,18 @@ class PagerDutyMergeTool:
             notes_str = str(inc.all_notes_count)
             if inc.real_notes:
                 notes_str += f"({len(inc.real_notes)}r)"
-            alert_label = ALERT_TYPE_LABELS.get(inc.alert_type, inc.alert_type)
+            if inc.alert_type == 'unknown' and RDS_EXPORT_RE.match(
+                self._strip_prefix(inc.title)[0]
+            ):
+                alert_label = 'RDS Exports'
+            else:
+                alert_label = ALERT_TYPE_LABELS.get(inc.alert_type, inc.alert_type)
 
+            stripped_title, _ = self._strip_prefix(inc.title)
             row = [
                 role,
-                inc.incident_id,
+                f"{PD_BASE_URL}/{inc.incident_id}",
+                stripped_title,
                 alert_label,
                 str(inc.alert_priority),
                 notes_str,
@@ -1024,11 +1129,6 @@ class PagerDutyMergeTool:
             print(self._make_row(row, widths))
         print(separator)
 
-        # Print links
-        print("Links:")
-        for inc in group.incidents:
-            role = "TARGET" if inc.incident_id == group.target.incident_id else "merge "
-            print(f"  {role}  {PD_BASE_URL}/{inc.incident_id}")
 
     def print_summary_line(self, idx: int, group: MergeGroup) -> None:
         """Print one-line summary for the all-groups overview."""
@@ -1129,6 +1229,43 @@ class PagerDutyMergeTool:
             )
             if mass_group:
                 merge_groups.append(mass_group)
+
+        # 7b. Detect RDS Exports merge opportunity (Scenario D)
+        rds_candidates = [
+            inc for inc in all_incidents
+            if RDS_EXPORT_RE.match(self._strip_prefix(inc.title)[0])
+        ]
+        if len(rds_candidates) >= 2:
+            # Check if there's a potential "failed to start" target
+            rds_target_candidate = next(
+                (
+                    inc for inc in rds_candidates
+                    if RDS_FAILED_TO_START_RE.search(
+                        self._strip_prefix(inc.title)[0]
+                    )
+                ),
+                None,
+            )
+            if rds_target_candidate:
+                rds_source_count = len(rds_candidates) - 1
+                print(f"\n--- Options ---")
+                print(f"  [D] RDS Exports merge: {len(rds_candidates)} RDS export incident(s) found")
+                print(f"      Target: {rds_target_candidate.incident_id} ({self._strip_prefix(rds_target_candidate.title)[0]})")
+                print(f"      Sources: {rds_source_count} individual RDS export failure(s)")
+                try:
+                    rds_answer = input("  Enable RDS Exports merge? [y/n]: ").strip().lower()
+                except (KeyboardInterrupt, EOFError):
+                    rds_answer = 'n'
+
+                if rds_answer in ('y', 'yes'):
+                    rds_group = self.build_rds_exports_group(all_incidents)
+                    if rds_group:
+                        print(f"  Validating target notes... \"Failed to start\" found in notes.")
+                        merge_groups.append(rds_group)
+                    else:
+                        print("  RDS Exports merge skipped: target has no 'Failed to start' in notes.")
+                else:
+                    print("  RDS Exports merge disabled.")
 
         # 8. Fetch notes for all incidents in mergeable groups
         print("Fetching incident notes...")
@@ -1407,7 +1544,16 @@ def main() -> None:
         print("Mode: DRY RUN (no changes will be made)")
     skipped_count = len(PagerDutyMergeTool.load_skipped_ids())
     if skipped_count:
-        print(f"Skip list: {skipped_count} incident(s) (--clear-skips to reset)")
+        print(f"Skip list: {skipped_count} incident(s)")
+        try:
+            clear_answer = input("  Clear skip list before proceeding? [y/n]: ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            clear_answer = 'n'
+        if clear_answer in ('y', 'yes'):
+            SKIP_FILE.unlink()
+            print(f"  Cleared {skipped_count} skipped incident(s).")
+        else:
+            print(f"  Keeping skip list ({skipped_count} incident(s)).")
     print("=" * 70)
     print()
 
