@@ -4,7 +4,7 @@
 
 ### Data Freshness Report (DACSCAN)
 - **Source:** Databricks notebook — `dataservices_treasury.treasury_teradata_base.pfocuscntl_meta_load_status`
-- **Confluence:** https://confluence.yourcompany.com
+- **Confluence:** (see internal Confluence for DS space / Data Freshness page)
 - **SLA Deadline:** Report must show NO "Delayed" items by:
   - **2:30 PM ART** (Argentina Time, UTC-3)
   - **5:30 PM UTC**

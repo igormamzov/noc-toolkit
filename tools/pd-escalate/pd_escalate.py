@@ -37,8 +37,8 @@ DRGN_PATTERN = re.compile(r'\b(DRGN-\d+)\b')
 # PagerDuty web UI base URL
 PD_BASE_URL = "https://yourcompany.pagerduty.com/incidents"
 
-# Jira web UI base URL
-JIRA_BASE_URL = "https://jira.yourcompany.com/browse"
+# Jira web UI base URL — built from JIRA_SERVER_URL env var at runtime
+JIRA_BASE_URL = None  # set in main() from os.environ['JIRA_SERVER_URL']
 
 # Jira transition ID for "Escalated" status
 ESCALATED_TRANSITION_ID = "51"
@@ -466,6 +466,10 @@ def main() -> None:
         print("\nPlease set these in your environment or .env file.", file=sys.stderr)
         print("See .env.example for the required format.", file=sys.stderr)
         sys.exit(1)
+
+    # Set JIRA_BASE_URL from env var
+    global JIRA_BASE_URL
+    JIRA_BASE_URL = jira_server_url.rstrip('/') + "/browse"
 
     # Parse incident ID
     incident_id = extract_incident_id(args.pd)

@@ -65,7 +65,7 @@ Claude: [generates portal-ready text with Summary, Error message,
 
 ## Key Things to Know
 
-- **DSSD Portal:** https://jira.yourcompany.com/servicedesk/customer/portal/324/group/1476
+- **DSSD Portal:** (see internal Jira Service Desk — portal 324, group 1476)
 - **"Performed steps"** field is single-line, max 255 chars — use `|` as separator
 - **DRGN tickets** — create via PagerDuty button, then link "is blocked by" DSSD
 - **PagerDuty notes** — after merging incidents, add notes to the **target** (surviving) incident
