@@ -26,7 +26,7 @@ All components are currently in **0.x.x** version, indicating active development
 | Component                  | Version | Status        | Description                                    |
 |----------------------------|---------|---------------|------------------------------------------------|
 | **noc-toolkit**            | 0.6.0   | Development   | Main toolkit launcher and orchestrator         |
-| **pd-monitor**             | 0.1.2   | Development   | Auto-acknowledge triggered PagerDuty incidents |
+| **pd-monitor**             | 0.1.3   | Development   | Auto-acknowledge triggered PagerDuty incidents |
 | **pd-jira-tool**           | 0.3.1   | Development   | PagerDuty-Jira integration and sync tool       |
 | **pagerduty-job-extractor**| 0.1.0   | Development   | Extract failed job names from PD incidents     |
 | **pd-merge**               | 0.2.2   | Development   | Find and merge related PD incidents by job name|
@@ -93,6 +93,16 @@ print(f"Version: {VERSION}")
 - Explicit Jira-blue (#0052CC) font color with underline for hyperlink cells (columns D and F)
 - Previously link color depended on reference row styling in the Excel template
 - New `_apply_hyperlink_font` helper ensures consistent link appearance regardless of template
+
+### pd-monitor v0.1.3 (2026-03-07)
+
+**Background mode — run pd-monitor while using other tools:**
+- New `--background` CLI flag: skip interactive duration menu, suppress `\r` progress bar
+- New `MonitorBackground` class in noc-toolkit.py: `subprocess.Popen` + daemon reader thread
+- Sub-menu when selecting PD Monitor: background / foreground / view output / stop
+- Banner status line: `▶ PD Monitor: ACTIVE 12m/60m | 5 new`
+- Output ring buffer (500 lines) with view-on-demand
+- Auto-stop on toolkit exit (choice 0 or Ctrl+C)
 
 ### pd-monitor v0.1.2 (2026-03-07)
 

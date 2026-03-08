@@ -111,6 +111,7 @@ noc-toolkit/
 - Randomized comment phrases (13 normal + 10 typo variants) to look like a real engineer
 - 20% typo probability, 50% lowercase probability for natural variation
 - Silent acknowledge (no comment) for "Missing" load-status incidents (AUS & NZL, MSP Export, CANADA, Central, East, International)
+- Background mode: runs as subprocess while user continues using other tools; output ring buffer with view-on-demand; auto-stop on toolkit exit
 - Detects prior auto-comments across all phrase variants to avoid duplicates
 - Continuous monitoring with configurable duration and check interval
 - Custom `--pattern` override disables randomization (backward compatible)

@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Set
 from dotenv import load_dotenv
 
 # Version information
-VERSION = "0.1.2"
+VERSION = "0.1.3"
 
 # Title patterns for silent acknowledge (ack only, no comment).
 # If an incident title contains any of these substrings (case-insensitive),
@@ -31,6 +31,7 @@ SILENT_ACK_PATTERNS = [
     "Missing Central",
     "Missing East",
     "Missing International",
+    "Missing UK",
 ]
 
 # Comment phrases for auto-acknowledge (to look like a real engineer)
@@ -86,7 +87,8 @@ class PagerDutyMonitor:
         output_file: str = "~/pd-monitor-needs-attention.txt",
         dry_run: bool = False,
         verbose: bool = False,
-        details: bool = False
+        details: bool = False,
+        background: bool = False
     ) -> None:
         """
         Initialize the PagerDuty monitor.
@@ -99,6 +101,7 @@ class PagerDutyMonitor:
             dry_run: If True, don't make actual changes
             verbose: If True, print detailed output
             details: If True, show detailed check information
+            background: If True, suppress interactive prompts and progress bar
         """
         self.pagerduty_session = pagerduty.RestApiV2Client(pagerduty_api_token)
         self.comment_pattern = comment_pattern
@@ -108,6 +111,7 @@ class PagerDutyMonitor:
         self.dry_run = dry_run
         self.verbose = verbose
         self.details = details
+        self.background = background
         self.user_id = self._get_current_user_id()
         self.processed_incidents: Set[str] = set()
 
@@ -642,7 +646,8 @@ class PagerDutyMonitor:
                 # Display summary
                 if summary['total'] > 0:
                     # Clear progress bar line and show incident info
-                    print("\r" + " " * 80 + "\r", end='')  # Clear line
+                    if not self.background:
+                        print("\r" + " " * 80 + "\r", end='')  # Clear line
                     print(f"\n  Found {summary['total']} triggered incident(s)")
                     if summary['new_incidents'] > 0:
                         print(f"  ✓ New incidents (comment added): {summary['new_incidents']}")
@@ -664,8 +669,10 @@ class PagerDutyMonitor:
                 if time.time() < end_time:
                     sleep_time = min(self.check_interval_seconds, end_time - time.time())
                     if sleep_time > 0:
-                        # Progress bar countdown
-                        if self.details:
+                        if self.background:
+                            # Background mode: plain sleep, no \r progress bar
+                            time.sleep(sleep_time)
+                        elif self.details:
                             # Details mode: show traditional countdown
                             for i in range(int(sleep_time), 0, -1):
                                 mins = i // 60
@@ -686,7 +693,8 @@ class PagerDutyMonitor:
             raise
 
         # Clear progress bar and show completion
-        print("\r" + " " * 80 + "\r", end='')  # Clear line
+        if not self.background:
+            print("\r" + " " * 80 + "\r", end='')  # Clear line
         print("\n" + "=" * 60)
         print(f"Monitoring completed after {check_count} checks")
         print("=" * 60)
@@ -702,6 +710,7 @@ def load_config() -> Dict:
         'dry_run': os.environ.get('MONITOR_DRY_RUN', 'false').lower() == 'true',
         'verbose': os.environ.get('MONITOR_VERBOSE', 'false').lower() == 'true',
         'details': False,
+        'background': False,
     }
 
     return config
@@ -776,6 +785,11 @@ Examples:
         '--details',
         action='store_true',
         help='Show detailed check information (default: minimal output)'
+    )
+    parser.add_argument(
+        '--background',
+        action='store_true',
+        help='Background mode: skip duration menu, suppress progress bar (used by noc-toolkit)'
     )
 
     return parser.parse_args()
@@ -865,6 +879,8 @@ def main() -> None:
         config['details'] = True
     else:
         config['details'] = False
+    if args.background:
+        config['background'] = True
 
     # Create monitor instance
     try:
@@ -875,7 +891,10 @@ def main() -> None:
 
     # If duration not specified and not single-check mode, show menu
     if args.duration is None and not args.once:
-        args.duration = show_duration_menu()
+        if args.background:
+            args.duration = 60  # Default for background mode
+        else:
+            args.duration = show_duration_menu()
 
     # Print header
     print("=" * 60)

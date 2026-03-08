@@ -187,7 +187,8 @@ cp .env.example .env
 - Auto-acknowledges triggered incidents assigned to current user
 - Randomized comment phrases (13 normal + 10 typo variants) to look like a real engineer
 - 20% typo probability, 50% lowercase probability for natural variation
-- Silent acknowledge (no comment) for "Missing" load-status incidents (AUS & NZL, MSP Export, CANADA, Central, East, International)
+- Silent acknowledge (no comment) for "Missing" load-status incidents (AUS & NZL, MSP Export, CANADA, Central, East, International, UK)
+- **Background mode** — run monitoring while using other tools, view output on demand, auto-stop on exit
 - Detects prior auto-comments to avoid duplicates
 - Continuous monitoring with configurable duration and check interval
 - Dry-run mode for safe testing

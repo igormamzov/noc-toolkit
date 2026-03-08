@@ -35,7 +35,12 @@ Auto-acknowledge triggered incidents.
 - Acknowledges all triggered incidents assigned to you
 - Posts a randomized human-like comment (13 phrases + 10 typo variants)
 - **Silent ack** (no comment) for "Missing" load-status incidents:
-  - Missing AUS & NZL, MSP Export, CANADA, Central, East, International
+  - Missing AUS & NZL, MSP Export, CANADA, Central, East, International, UK
+- **Background mode** — monitoring runs while you use other tools:
+  - Select PD Monitor → "Background" → pick duration → done
+  - Banner shows status: `▶ PD Monitor: ACTIVE 12m/60m | 5 new`
+  - Select PD Monitor again → "View output" or "Stop"
+  - Auto-stops on toolkit exit
 - Interactive duration menu (1h / 2h / 4h / 8h / 12h / custom)
 - `--once` for single check, `--details` for verbose countdown
 

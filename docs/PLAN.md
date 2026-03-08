@@ -190,6 +190,17 @@
 
 ## 🔄 Change Log
 
+### 2026-03-07 (pd-monitor v0.1.3 — Background mode)
+
+**✅ Completed — Background monitoring while using other tools:**
+- New `--background` CLI flag: skips interactive duration menu, suppresses `\r` progress bar
+- New `MonitorBackground` class in noc-toolkit.py: `subprocess.Popen` + daemon reader thread + deque ring buffer
+- Sub-menu when selecting PD Monitor: background / foreground / view output / stop
+- Banner status indicator: `▶ PD Monitor: ACTIVE 12m/60m | 5 new`
+- Output ring buffer (500 lines) with view-on-demand via sub-menu
+- Auto-stop on toolkit exit (choice 0 or Ctrl+C)
+- Version bump: 0.1.2 → 0.1.3
+
 ### 2026-03-07 (pd-monitor v0.1.2 — Silent acknowledge for Missing incidents)
 
 **✅ Completed — Silent ack for load-status "Missing" incidents:**
