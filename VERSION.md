@@ -32,7 +32,7 @@ All components are currently in **0.x.x** version, indicating active development
 | **pd-merge**               | 0.2.3   | Development   | Find and merge related PD incidents by job name|
 | **pd-escalate**            | 0.1.0   | Development   | Post-DSSD escalation workflow automation       |
 | **data-freshness**         | 0.1.0   | Development   | DACSCAN data freshness report via Databricks SQL|
-| **noc-report-assistant**   | 0.1.1   | Development   | Sync Jira statuses into End-of-Shift Excel report|
+| **noc-report-assistant**   | 0.1.2   | Development   | Sync Jira statuses into End-of-Shift Excel report|
 
 ---
 
@@ -93,6 +93,13 @@ print(f"Version: {VERSION}")
 - PD note with escalation summary + Jira URL
 - Slack template output for #cds-ops-24x7-int with hyperlink instructions
 - Dry-run mode for safe testing
+
+### noc-report-assistant v0.1.2 (2026-03-09)
+
+**Bug fix — sync now processes "Things to monitor" rows:**
+- `STOP_MARKERS` no longer includes "Things to monitor", only "Permalinks"
+- Previously, tickets added via "Add row" into the TTM section were skipped during sync
+- Status and Assignee updates now apply to all ticket rows including those inside TTM
 
 ### noc-report-assistant v0.1.1 (2026-03-07)
 

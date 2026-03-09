@@ -465,6 +465,10 @@ noc-toolkit/
 - ✅ Auto-detect DRGN via PD Jira integration field (`external_references`)
 - ✅ Registered as tool #7 in noc-toolkit menu
 
+### noc-report-assistant v0.1.2 (2026-03-09)
+
+- ✅ Bug fix: sync now processes tickets inside "Things to monitor" section (previously skipped)
+
 ### noc-report-assistant v0.1.1 (2026-03-07)
 
 - ✅ Fixed hyperlink color: explicit Jira-blue (#0052CC) with underline for ticket and Slack links

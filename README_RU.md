@@ -595,6 +595,10 @@ noc-toolkit/
 - ✅ Автоопределение DRGN через PD Jira integration field (`external_references`)
 - ✅ Зарегистрирован как инструмент #7 в меню noc-toolkit
 
+### noc-report-assistant v0.1.2 (2026-03-09)
+
+- ✅ Баг-фикс: синк теперь обрабатывает тикеты внутри секции "Things to monitor" (ранее пропускались)
+
 ### noc-report-assistant v0.1.1 (2026-03-07)
 
 - ✅ Исправлен цвет гиперссылок: явный Jira-blue (#0052CC) с подчёркиванием для ссылок на тикеты и Slack

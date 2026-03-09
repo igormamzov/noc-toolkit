@@ -35,7 +35,7 @@ _HYPERLINK_COLOR = _OpenpyxlColor(rgb="FF0052CC")
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 
 DEFAULT_REPORT_PATH = "~/Downloads/NOC endshift report.xlsx"
 SHEETS = ["Night-Shift-NEW", "Day-Shift-NEW"]
@@ -54,7 +54,8 @@ STATUS_MAP = {
     "WORK IN PROGRESS": "IN PROGRESS",
 }
 
-STOP_MARKERS = ("Things to monitor", "Permalinks")
+# Only stop at "Permalinks" — tickets inside "Things to monitor" must be synced too
+STOP_MARKERS = ("Permalinks",)
 
 
 # ---------------------------------------------------------------------------

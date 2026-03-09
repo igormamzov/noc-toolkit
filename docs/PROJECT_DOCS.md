@@ -545,6 +545,13 @@ Logs are stored in the `logs/` directory (created automatically):
 - Registered as tool #7 in noc-toolkit menu
 - No new dependencies
 
+### noc-report-assistant v0.1.2 (2026-03-09)
+
+**Bug fix — sync now processes "Things to monitor" rows:**
+- `STOP_MARKERS` no longer includes "Things to monitor", only "Permalinks"
+- Previously, tickets added via "Add row" into the TTM section were skipped during sync
+- Status and Assignee updates now apply to all ticket rows including those inside TTM
+
 ### noc-report-assistant v0.1.1 (2026-03-07)
 
 **Hyperlink color fix:**
