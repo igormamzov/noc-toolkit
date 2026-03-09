@@ -465,6 +465,12 @@ noc-toolkit/
 - ✅ Auto-detect DRGN via PD Jira integration field (`external_references`)
 - ✅ Registered as tool #7 in noc-toolkit menu
 
+### noc-report-assistant v0.1.3 (2026-03-09)
+
+- ✅ Shift handoff automation: "Start shift" copies tickets from previous shift, updates date, syncs
+- ✅ Menu reordered: 1=Start shift, 2=End shift (SYNC), 3=Add row
+- ✅ Month boundary handling (e.g. Mar 31 → Apr 1)
+
 ### noc-report-assistant v0.1.2 (2026-03-09)
 
 - ✅ Bug fix: sync now processes tickets inside "Things to monitor" section (previously skipped)

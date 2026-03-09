@@ -545,6 +545,16 @@ Logs are stored in the `logs/` directory (created automatically):
 - Registered as tool #7 in noc-toolkit menu
 - No new dependencies
 
+### noc-report-assistant v0.1.3 (2026-03-09)
+
+**Shift handoff automation:**
+- New action "Start shift" — copies all tickets from previous shift, updates date, runs sync
+- Menu reordered: 1=Start shift, 2=End shift (SYNC), 3=Add row
+- Auto-detects section boundaries via `_scan_layout()` (ShiftLayout dataclass)
+- Handles insert/delete rows when ticket count differs between shifts
+- Month boundary handling (e.g. Mar 31 → Apr 1)
+- New helpers: `_write_ticket_row()`, `_rebuild_section_merge()`
+
 ### noc-report-assistant v0.1.2 (2026-03-09)
 
 **Bug fix — sync now processes "Things to monitor" rows:**

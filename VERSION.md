@@ -32,7 +32,7 @@ All components are currently in **0.x.x** version, indicating active development
 | **pd-merge**               | 0.2.3   | Development   | Find and merge related PD incidents by job name|
 | **pd-escalate**            | 0.1.0   | Development   | Post-DSSD escalation workflow automation       |
 | **data-freshness**         | 0.1.0   | Development   | DACSCAN data freshness report via Databricks SQL|
-| **noc-report-assistant**   | 0.1.2   | Development   | Sync Jira statuses into End-of-Shift Excel report|
+| **noc-report-assistant**   | 0.1.3   | Development   | Sync Jira statuses into End-of-Shift Excel report|
 
 ---
 
@@ -93,6 +93,18 @@ print(f"Version: {VERSION}")
 - PD note with escalation summary + Jira URL
 - Slack template output for #cds-ops-24x7-int with hyperlink instructions
 - Dry-run mode for safe testing
+
+### noc-report-assistant v0.1.3 (2026-03-09)
+
+**Shift handoff automation:**
+- New action "Start shift" — copies all tickets from previous shift, updates date, runs sync
+- Menu reordered: 1=Start shift, 2=End shift (SYNC), 3=Add row
+- Auto-detects section boundaries ("from previous shifts", "Things to monitor", "Permalinks")
+- Handles insert/delete rows when ticket count differs between shifts
+- Month boundary handling (e.g. Mar 31 → Apr 1)
+- New dataclasses: `ShiftLayout`, `RowSnapshot`
+- New methods: `start_shift()`, `_scan_layout()`, `_collect_source_rows()`, `_update_date()`
+- Extracted `_write_ticket_row()` and `_rebuild_section_merge()` helpers
 
 ### noc-report-assistant v0.1.2 (2026-03-09)
 
