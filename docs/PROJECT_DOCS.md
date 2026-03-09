@@ -146,7 +146,7 @@ Designed to run every 10 minutes via cron:
 
 **Location:** `tools/pd-merge/`
 **Main Script:** `pd_merge.py`
-**Version:** 0.2.2
+**Version:** 0.2.3
 **Purpose:** Find and merge related PagerDuty incidents that share the same root cause (same job/DAG name)
 
 **Key Features:**
@@ -174,7 +174,7 @@ Designed to run every 10 minutes via cron:
 **Title Normalization:**
 - Strip DSSD/DRGN/FCR/COREDATA ticket prefixes from titles
 - Strip `[ERROR]`, `[DATABRICKS]`, `[CRITICAL]`, `[AIRFLOW]` wrappers
-- For Monitor jobs: strip `_prod` and `_airflow_prod` suffixes
+- For Monitor jobs: strip `_prod`, `_run_prod`, and `_airflow_prod` suffixes
 - Group incidents by normalized job name
 
 **Configuration:**

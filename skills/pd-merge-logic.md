@@ -41,7 +41,7 @@ Each incident title follows one of these patterns. Extract the **job name** and 
 ### Normalization Rules
 
 1. Strip common title prefixes before extraction: `DSSD-NNNNN`, `DRGN-NNNNN`, `FCR-NNNNN`, `COREDATA-NNNNN`, `monitoring`, `restarted`, `Disabled. Ignore`
-2. For Monitor jobs: strip `_prod` and `_airflow_prod` suffixes from job name
+2. For Monitor jobs: strip `_prod`, `_run_prod`, and `_airflow_prod` suffixes from job name
 3. Group incidents by normalized job name
 
 ## Step 3: Filter Mergeable Groups

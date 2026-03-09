@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 # Version information
-VERSION = "0.2.2"
+VERSION = "0.2.3"
 
 # Skip file: stores incident IDs that the user explicitly skipped,
 # so they don't reappear on subsequent runs.
@@ -83,7 +83,7 @@ AIRFLOW_TIME_RE = re.compile(
 )
 
 # Monitor name suffix normalization
-MONITOR_SUFFIX_RE = re.compile(r'(?:_airflow_prod|_prod)$', re.IGNORECASE)
+MONITOR_SUFFIX_RE = re.compile(r'(?:_airflow_prod|_run_prod|_prod)$', re.IGNORECASE)
 
 # Jira ticket extraction
 JIRA_TICKET_RE = re.compile(r'\b((?:DSSD|DRGN|FCR|COREDATA)-\d+)\b', re.IGNORECASE)

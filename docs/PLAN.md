@@ -210,6 +210,14 @@
 - New `silent_ack` action type and summary counter
 - Version bump: 0.1.1 → 0.1.2
 
+### 2026-03-08 (pd-merge v0.2.3 — fix _run_prod normalization)
+
+**✅ Completed — Monitor `_run_prod` suffix not normalized:**
+- Job names like `jb_edw_dsn_sls_ord_0206_run_prod` (Monitor) were normalized to `_run` instead of being fully stripped
+- Added `_run_prod` to `MONITOR_SUFFIX_RE`: `(?:_airflow_prod|_run_prod|_prod)$`
+- Now correctly groups Monitor `_run_prod` alerts with their Databricks counterparts
+- Version bump: 0.2.2 → 0.2.3
+
 ### 2026-03-07 (pd-merge v0.2.2 — UI/UX improvements)
 
 **✅ Completed — Merge table and skip list improvements:**

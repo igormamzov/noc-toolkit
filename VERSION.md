@@ -29,7 +29,7 @@ All components are currently in **0.x.x** version, indicating active development
 | **pd-monitor**             | 0.1.3   | Development   | Auto-acknowledge triggered PagerDuty incidents |
 | **pd-jira-tool**           | 0.3.1   | Development   | PagerDuty-Jira integration and sync tool       |
 | **pagerduty-job-extractor**| 0.1.0   | Development   | Extract failed job names from PD incidents     |
-| **pd-merge**               | 0.2.2   | Development   | Find and merge related PD incidents by job name|
+| **pd-merge**               | 0.2.3   | Development   | Find and merge related PD incidents by job name|
 | **pd-escalate**            | 0.1.0   | Development   | Post-DSSD escalation workflow automation       |
 | **data-freshness**         | 0.1.0   | Development   | DACSCAN data freshness report via Databricks SQL|
 | **noc-report-assistant**   | 0.1.1   | Development   | Sync Jira statuses into End-of-Shift Excel report|
@@ -64,6 +64,13 @@ print(f"Version: {VERSION}")
 ---
 
 ## Version History
+
+### pd-merge v0.2.3 (2026-03-08)
+
+**Fix: Monitor `_run_prod` suffix not normalized — missed merge with Databricks alerts:**
+- Job names like `jb_edw_dsn_sls_ord_0206_run_prod` (Monitor) were normalized to `jb_edw_dsn_sls_ord_0206_run` instead of `jb_edw_dsn_sls_ord_0206`
+- Added `_run_prod` to `MONITOR_SUFFIX_RE` pattern: `(?:_airflow_prod|_run_prod|_prod)$`
+- Now correctly groups Monitor `_run_prod` alerts with their Databricks counterparts
 
 ### NOC Toolkit v0.6.0 (2026-03-07)
 
