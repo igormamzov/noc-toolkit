@@ -68,6 +68,7 @@ noc-toolkit/
 
 **Location:** `tools/pd-jira-tool/`
 **Main Script:** `pagerduty_jira_tool.py`
+**Version:** 0.3.2
 **Purpose:** Synchronizes PagerDuty incidents with Jira issues
 
 **Key Features:**

@@ -14,7 +14,7 @@ from typing import List, Optional, Dict, Any, TextIO
 from datetime import datetime, timedelta, timezone
 
 # Version information
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 
 # Suppress pagination warnings from pagerduty package
 warnings.filterwarnings('ignore', message='.*lacks a "more" property.*')
@@ -29,6 +29,11 @@ except ImportError as import_error:
     print(f"Error: Missing required dependencies. Please run: pip install -r requirements.txt")
     print(f"Details: {import_error}")
     sys.exit(1)
+
+
+def _parse_iso_dt(iso_str: str) -> datetime:
+    """Parse an ISO 8601 datetime string (with optional trailing 'Z') into a timezone-aware datetime."""
+    return datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
 
 
 class PagerDutyJiraTool:
@@ -86,6 +91,14 @@ class PagerDutyJiraTool:
                 "  - JIRA_PERSONAL_ACCESS_TOKEN (for Jira Server/Data Center), or\n"
                 "  - JIRA_EMAIL and JIRA_API_TOKEN (for Jira Cloud)"
             )
+
+    @staticmethod
+    def _is_assigned_to_user(incident: Dict[str, Any], user_id: str) -> bool:
+        """Check if an incident is assigned to the given user."""
+        return any(
+            assignment.get('assignee', {}).get('id') == user_id
+            for assignment in incident.get('assignments', [])
+        )
 
     def print_verbose(self, message: str) -> None:
         """Print message only if not in quiet mode."""
@@ -151,15 +164,10 @@ class PagerDutyJiraTool:
 
             # Client-side filtering for user assignment
             if user_id:
-                filtered_current = []
-                for incident in current_list:
-                    is_assigned_to_user = any(
-                        assignment.get('assignee', {}).get('id') == user_id
-                        for assignment in incident.get('assignments', [])
-                    )
-                    if is_assigned_to_user:
-                        filtered_current.append(incident)
-                current_list = filtered_current
+                current_list = [
+                    inc for inc in current_list
+                    if self._is_assigned_to_user(inc, user_id)
+                ]
 
             # Create a set of incident IDs for deduplication
             incident_ids = {incident['id'] for incident in current_list}
@@ -181,15 +189,8 @@ class PagerDutyJiraTool:
             # Filter and add incidents assigned to the user that aren't already in our list
             for incident in historical_list:
                 if incident['id'] not in incident_ids:
-                    # Client-side filtering for user assignment
-                    if user_id:
-                        is_assigned_to_user = any(
-                            assignment.get('assignee', {}).get('id') == user_id
-                            for assignment in incident.get('assignments', [])
-                        )
-                        if not is_assigned_to_user:
-                            continue
-
+                    if user_id and not self._is_assigned_to_user(incident, user_id):
+                        continue
                     all_incidents.append(incident)
                     incident_ids.add(incident['id'])
 
@@ -265,9 +266,7 @@ class PagerDutyJiraTool:
                     created_at_str = note.get('created_at', '')
                     if created_at_str:
                         try:
-                            # Parse ISO 8601 timestamp
-                            created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-                            # Make timezone-naive for comparison
+                            created_at = _parse_iso_dt(created_at_str)
                             created_at_naive = created_at.replace(tzinfo=None)
 
                             if created_at_naive > threshold_time:
@@ -409,11 +408,7 @@ class PagerDutyJiraTool:
         else:
             print("Fetching open PagerDuty incidents...")
 
-        try:
-            incidents = self.get_open_incidents(user_id=user_id)
-        except RuntimeError as error:
-            print(f"Error: {error}")
-            sys.exit(1)
+        incidents = self.get_open_incidents(user_id=user_id)
 
         if not incidents:
             summary = "\n✓ No open incidents found. You're all clear!"
@@ -521,11 +516,7 @@ class PagerDutyJiraTool:
         else:
             print(f"Processing open PagerDuty incidents...")
 
-        try:
-            incidents = self.get_open_incidents(user_id=user_id)
-        except RuntimeError as error:
-            print(f"Error: {error}")
-            sys.exit(1)
+        incidents = self.get_open_incidents(user_id=user_id)
 
         if not incidents:
             summary = "\n✓ No open incidents found. You're all clear!"

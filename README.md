@@ -462,6 +462,12 @@ noc-toolkit/
 
 ## 🔄 Version History
 
+### pd-jira-tool v0.3.2 (2026-03-12)
+
+- ✅ Extracted `_parse_iso_dt()` and `_is_assigned_to_user()` helpers — deduplicates ISO parsing and user-filter logic
+- ✅ Removed `sys.exit(1)` from `check_incidents()` and `process_and_update_incidents()` — exceptions propagate to caller
+- ✅ 96 unit tests added (pytest)
+
 ### pagerduty-job-extractor v0.1.1 (2026-03-12)
 
 - ✅ Removed `sys.exit(1)` from business logic — exceptions propagate to caller
