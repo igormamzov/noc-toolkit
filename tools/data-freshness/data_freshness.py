@@ -19,7 +19,7 @@ import time
 import warnings
 import webbrowser
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -37,7 +37,7 @@ except ImportError:
     print("Error: Missing 'python-dotenv' library. Run: pip install -r requirements.txt", file=sys.stderr)
     sys.exit(1)
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 # ---------------------------------------------------------------------------
 # SLA constants
@@ -691,10 +691,7 @@ class DataFreshnessChecker:
             if rows:
                 max_update = str(rows[0].get("max_update", "N/A"))
                 max_data_dt = str(rows[0].get("max_data_dt", "N/A"))
-                # Consider fresh if max_update contains today's date (rough check)
-                today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                yesterday_str = _yesterday_str()
-                is_fresh = today_str in max_update or yesterday_str in max_update
+                is_fresh = _is_fresh_date(max_update)
                 return GranularResult(
                     table_name=table_name,
                     check_type="update_ts",
@@ -715,11 +712,7 @@ class DataFreshnessChecker:
             except (ValueError, TypeError):
                 host_count_int = 0
 
-            yesterday_str = _yesterday_str()
-            today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            is_fresh = host_count_int >= EXPECTED_HOST_COUNT and (
-                yesterday_str in filedate or today_str in filedate
-            )
+            is_fresh = host_count_int >= EXPECTED_HOST_COUNT and _is_fresh_date(filedate)
             return GranularResult(
                 table_name=table_name,
                 check_type="host-level",
@@ -743,14 +736,11 @@ class DataFreshnessChecker:
         rows = self.db.execute(sql)
         if rows:
             max_update = str(rows[0].get("max_update", "N/A"))
-            today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            yesterday_str = _yesterday_str()
-            is_fresh = today_str in max_update or yesterday_str in max_update
             return GranularResult(
                 table_name=table_name,
                 check_type="update_ts",
                 detail=f"max_update={max_update}",
-                is_actually_fresh=is_fresh,
+                is_actually_fresh=_is_fresh_date(max_update),
             )
 
         return GranularResult(
@@ -770,14 +760,11 @@ class DataFreshnessChecker:
         if rows:
             max_data_dt = str(rows[0].get("max_data_dt", "N/A"))
             max_update = str(rows[0].get("max_update", "N/A"))
-            today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            yesterday_str = _yesterday_str()
-            is_fresh = today_str in max_data_dt or yesterday_str in max_data_dt
             return GranularResult(
                 table_name=table_name,
                 check_type="bi-loader",
                 detail=f"max_data_dt={max_data_dt}, max_update={max_update}",
-                is_actually_fresh=is_fresh,
+                is_actually_fresh=_is_fresh_date(max_data_dt),
             )
 
         return GranularResult(
@@ -790,10 +777,16 @@ class DataFreshnessChecker:
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _is_fresh_date(date_str: str) -> bool:
+    """Check if a date string contains today's or yesterday's date (UTC)."""
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    yesterday = _yesterday_str()
+    return today_str in date_str or yesterday in date_str
+
+
 def _yesterday_str() -> str:
     """Return yesterday's date as YYYY-MM-DD string (UTC)."""
     now = datetime.now(timezone.utc)
-    from datetime import timedelta
     yesterday = now - timedelta(days=1)
     return yesterday.strftime("%Y-%m-%d")
 

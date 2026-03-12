@@ -462,6 +462,12 @@ noc-toolkit/
 
 ## 🔄 Version History
 
+### data-freshness v0.1.1 (2026-03-12)
+
+- ✅ Extracted `_is_fresh_date()` helper — deduplicates 5 repeated freshness date checks
+- ✅ Fixed `timedelta` import (was inside function body)
+- ✅ 48 unit tests added (pytest)
+
 ### pd-escalate v0.1.1 (2026-03-11)
 
 - ✅ Refactor: moved `JIRA_BASE_URL` from global to instance attribute, removed `PD_BASE_URL` global

@@ -31,7 +31,7 @@ All components are currently in **0.x.x** version, indicating active development
 | **pagerduty-job-extractor**| 0.1.0   | Development   | Extract failed job names from PD incidents     |
 | **pd-merge**               | 0.2.3   | Development   | Find and merge related PD incidents by job name|
 | **pd-escalate**            | 0.1.1   | Development   | Post-DSSD escalation workflow automation       |
-| **data-freshness**         | 0.1.0   | Development   | DACSCAN data freshness report via Databricks SQL|
+| **data-freshness**         | 0.1.1   | Development   | DACSCAN data freshness report via Databricks SQL|
 | **noc-report-assistant**   | 0.1.5   | Development   | Sync Jira statuses into End-of-Shift Excel report|
 
 ---
@@ -81,6 +81,13 @@ print(f"Version: {VERSION}")
 - CLI: `--pd` (incident ID or URL), `--dssd` (required), `--drgn` (optional), `--dry-run`
 - No new dependencies — reuses `pagerduty` + `jira` libs already in requirements.txt
 - Registered as tool #7 in noc-toolkit menu
+
+### data-freshness v0.1.1 (2026-03-12)
+
+**Refactor: deduplicate freshness check logic, add tests:**
+- Extracted `_is_fresh_date()` helper — replaces 5 duplicate `today_str in X or yesterday_str in X` patterns
+- Moved `timedelta` import from function body to module level in `_yesterday_str()`
+- 48 unit tests added (pytest)
 
 ### pd-escalate v0.1.1 (2026-03-11)
 

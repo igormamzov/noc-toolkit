@@ -199,7 +199,7 @@ Designed to run every 10 minutes via cron:
 
 **Location:** `tools/data-freshness/`
 **Main Script:** `data_freshness.py`
-**Version:** 0.1.0
+**Version:** 0.1.1
 **Purpose:** Automate the daily DACSCAN Data Freshness Report by querying Databricks SQL
 
 **Key Features:**
@@ -546,6 +546,13 @@ Logs are stored in the `logs/` directory (created automatically):
 ---
 
 ## 🔄 Version History
+
+### data-freshness v0.1.1 (2026-03-12)
+
+**Refactor: deduplicate freshness check logic, add tests:**
+- Extracted `_is_fresh_date()` helper — replaces 5 duplicate `today_str in X or yesterday_str in X` patterns
+- Moved `timedelta` import from function body to module level in `_yesterday_str()`
+- 48 unit tests added (pytest)
 
 ### pd-escalate v0.1.1 (2026-03-11)
 
