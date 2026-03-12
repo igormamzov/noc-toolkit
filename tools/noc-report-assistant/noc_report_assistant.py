@@ -37,7 +37,7 @@ _HYPERLINK_COLOR = _OpenpyxlColor(rgb="FF0052CC")
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-VERSION = "0.1.4"
+VERSION = "0.1.5"
 
 DEFAULT_REPORT_PATH = "~/Downloads/NOC endshift report.xlsx"
 SHEETS = ["Night-Shift-NEW", "Day-Shift-NEW"]
@@ -55,9 +55,6 @@ JIRA_LINK_REGEX = re.compile(r'https?://jira\.[^/]+/')
 STATUS_MAP = {
     "WORK IN PROGRESS": "IN PROGRESS",
 }
-
-# Only stop at "Permalinks" — tickets inside "Things to monitor" must be synced too
-STOP_MARKERS = ("Permalinks",)
 
 # Month abbreviation ↔ number mapping for date logic
 MONTH_ABBREV = {
@@ -122,33 +119,39 @@ class NOCReportAssistant:
 
     # -- public: sync statuses -----------------------------------------------
 
-    def run(self, file_path: Path, sheet_name: str) -> List[TicketUpdate]:
-        """Open Excel, walk ticket rows, update statuses, save."""
-        workbook = load_workbook(file_path)
-        worksheet = workbook[sheet_name]
+    def run(
+        self,
+        file_path: Path,
+        sheet_name: str,
+        *,
+        _worksheet=None,
+    ) -> List[TicketUpdate]:
+        """Walk ticket rows, update statuses from Jira, save.
+
+        If *_worksheet* is provided, sync in-memory (no load/save).
+        The caller is responsible for saving when using _worksheet.
+        """
+        if _worksheet is not None:
+            workbook = None
+            worksheet = _worksheet
+        else:
+            workbook = load_workbook(file_path)
+            worksheet = workbook[sheet_name]
+
+        layout = self._scan_layout(worksheet)
         updates: List[TicketUpdate] = []
 
-        for row_number in range(TICKET_START_ROW, worksheet.max_row + 1):
-            # Stop when we hit a section marker
-            cell_a_value = str(worksheet.cell(row=row_number, column=1).value or "")
-            if row_number > TICKET_START_ROW + 1 and any(
-                marker in cell_a_value for marker in STOP_MARKERS
-            ):
-                break
-
-            # Extract ticket ID from column D (plain text or =HYPERLINK formula)
+        for row_number in range(TICKET_START_ROW, layout.permalinks_row):
             ticket_id = self._extract_ticket_id(
                 worksheet.cell(row=row_number, column=TICKET_COLUMN)
             )
             if not ticket_id:
                 continue
 
-            # Fetch status from Jira
             jira_status, jira_assignee = self._fetch_jira_status(ticket_id)
             if jira_status is None:
                 continue
 
-            # Build new value for column E
             old_value = str(
                 worksheet.cell(row=row_number, column=STATUS_COLUMN).value or ""
             )
@@ -162,7 +165,7 @@ class NOCReportAssistant:
                 TicketUpdate(row_number, ticket_id, old_value, new_value, changed)
             )
 
-        if not self.dry_run:
+        if not self.dry_run and workbook is not None:
             workbook.save(file_path)
 
         return updates
@@ -180,28 +183,9 @@ class NOCReportAssistant:
         workbook = load_workbook(file_path)
         worksheet = workbook[sheet_name]
 
-        # Find "Things to monitor" row (not "from the previous shifts")
-        ttm_row: Optional[int] = None
-        for row_number in range(TICKET_START_ROW + 2, worksheet.max_row + 1):
-            cell_a_value = str(worksheet.cell(row=row_number, column=1).value or "")
-            if ("Things to monitor" in cell_a_value
-                    and "from" not in cell_a_value.lower()):
-                ttm_row = row_number
-                break
-
-        if ttm_row is None:
-            raise RuntimeError("Could not find 'Things to monitor' section")
-
-        # Find "Permalinks" row (next section after "Things to monitor")
-        permalinks_row: Optional[int] = None
-        for row_number in range(ttm_row + 1, worksheet.max_row + 1):
-            cell_a_value = str(worksheet.cell(row=row_number, column=1).value or "")
-            if "Permalinks" in cell_a_value:
-                permalinks_row = row_number
-                break
-
-        if permalinks_row is None:
-            raise RuntimeError("Could not find 'Permalinks' section")
+        layout = self._scan_layout(worksheet)
+        ttm_row = layout.ttm_row
+        permalinks_row = layout.permalinks_row
 
         # Reference row for formatting: last ticket row above "Things to monitor"
         reference_row = ttm_row - 1
@@ -336,97 +320,25 @@ class NOCReportAssistant:
 
         # Step 3: Restructure target "from previous shifts"
         target_layout = self._scan_layout(target_ws)
-        current_count = max(
-            target_layout.from_prev_end - target_layout.from_prev_row + 1, 0,
+        ttm_row, permalinks_row = self._restructure_from_prev(
+            target_ws, target_layout, source_rows,
         )
-        source_count = max(len(source_rows), 1)  # keep at least the header row
-        delta = source_count - current_count
-
-        if delta > 0:
-            # Need more rows — insert BEFORE "Things to monitor" header
-            target_ws.insert_rows(target_layout.ttm_row, delta)
-            # Post-insert: remove duplicate merges on newly inserted rows
-            for merge_range in list(target_ws.merged_cells.ranges):
-                new_start = target_layout.ttm_row
-                new_end = target_layout.ttm_row + delta - 1
-                if (new_start <= merge_range.min_row <= new_end
-                        and merge_range.min_row == merge_range.max_row
-                        and merge_range.max_col > 2):
-                    target_ws.merged_cells.ranges.remove(merge_range)
-        elif delta < 0:
-            # Need fewer rows — delete from bottom of "from previous" section
-            delete_start = target_layout.from_prev_row + source_count
-            target_ws.delete_rows(delete_start, abs(delta))
-
-        # Rescan after structural changes
-        target_layout = self._scan_layout(target_ws)
-
-        # Rebuild "from previous shifts" A:B merge
-        _rebuild_section_merge(
-            target_ws,
-            target_layout.from_prev_row,
-            target_layout.from_prev_row + source_count - 1,
-        )
-
-        # Ensure "from previous shifts" header text exists in cell A
-        target_ws.cell(
-            row=target_layout.from_prev_row, column=1,
-        ).value = "Things to Monitor\nfrom the previous shifts"
-
-        # Write source data into target "from previous" rows
-        reference_row = target_layout.from_prev_row
-        for idx, snap in enumerate(source_rows):
-            target_row = target_layout.from_prev_row + idx
-            _write_ticket_row(target_ws, target_row, snap, reference_row)
-
-        # If source was empty, clear the single remaining header row's C-F
-        if not source_rows:
-            for col in [3, 4, 5, 6]:
-                target_ws.cell(
-                    row=target_layout.from_prev_row, column=col,
-                ).value = None
 
         # Step 4: Reset "Things to monitor" to one empty row
-        target_layout = self._scan_layout(target_ws)
-        extra_ttm_rows = target_layout.ttm_end - target_layout.ttm_row
-        if extra_ttm_rows > 0:
-            target_ws.delete_rows(target_layout.ttm_row + 1, extra_ttm_rows)
-            target_layout = self._scan_layout(target_ws)
-
-        # Clear C-F on TTM header row
-        for col in [3, 4, 5, 6]:
-            cell = target_ws.cell(row=target_layout.ttm_row, column=col)
-            cell.value = None
-            cell.hyperlink = None
-        _remove_hyperlinks_in_range(
-            target_ws, target_layout.ttm_row, 3, target_layout.ttm_row, 6,
-        )
-
-        # Rebuild TTM A:B merge to exactly 1 row
-        _rebuild_section_merge(
-            target_ws, target_layout.ttm_row, target_layout.ttm_row,
+        permalinks_row = self._reset_ttm(
+            target_ws, ttm_row, target_layout.ttm_end + (ttm_row - target_layout.ttm_row),
+            permalinks_row,
         )
 
         # Step 5: Repair Permalinks
-        target_layout = self._scan_layout(target_ws)
-        for merge_range in list(target_ws.merged_cells.ranges):
-            if (merge_range.min_row == target_layout.permalinks_row
-                    and merge_range.max_row == target_layout.permalinks_row):
-                target_ws.merged_cells.ranges.remove(merge_range)
-        target_ws.merge_cells(
-            start_row=target_layout.permalinks_row, start_column=1,
-            end_row=target_layout.permalinks_row, end_column=6,
-        )
-        _remove_hyperlinks_in_range(
-            target_ws, target_layout.permalinks_row, 2,
-            target_layout.permalinks_row, 6,
-        )
-        _ensure_permalink_merges(target_ws, target_layout.permalinks_row)
+        _repair_permalinks(target_ws, permalinks_row)
 
-        # Step 6: Save + Sync
+        # Step 6: Sync in-memory + Save (single I/O pass)
         if not self.dry_run:
+            sync_updates = self.run(
+                file_path, target_sheet_name, _worksheet=target_ws,
+            )
             workbook.save(file_path)
-            sync_updates = self.run(file_path, target_sheet_name)
         else:
             sync_updates = []
 
@@ -436,6 +348,84 @@ class NOCReportAssistant:
             "date_month": new_month,
             "sync_updates": sync_updates,
         }
+
+    # -- internal: shift sub-steps -------------------------------------------
+
+    @staticmethod
+    def _restructure_from_prev(
+        target_ws,
+        target_layout: ShiftLayout,
+        source_rows: List[RowSnapshot],
+    ) -> Tuple[int, int]:
+        """Resize 'from previous shifts' to fit source_rows and write data.
+
+        Returns (new_ttm_row, new_permalinks_row) after structural changes.
+        """
+        current_count = max(
+            target_layout.from_prev_end - target_layout.from_prev_row + 1, 0,
+        )
+        source_count = max(len(source_rows), 1)
+        delta = source_count - current_count
+
+        if delta > 0:
+            target_ws.insert_rows(target_layout.ttm_row, delta)
+            for merge_range in list(target_ws.merged_cells.ranges):
+                new_start = target_layout.ttm_row
+                new_end = target_layout.ttm_row + delta - 1
+                if (new_start <= merge_range.min_row <= new_end
+                        and merge_range.min_row == merge_range.max_row
+                        and merge_range.max_col > 2):
+                    target_ws.merged_cells.ranges.remove(merge_range)
+        elif delta < 0:
+            delete_start = target_layout.from_prev_row + source_count
+            target_ws.delete_rows(delete_start, abs(delta))
+
+        from_prev_row = target_layout.from_prev_row
+        ttm_row = target_layout.ttm_row + delta
+        permalinks_row = target_layout.permalinks_row + delta
+
+        _rebuild_section_merge(
+            target_ws, from_prev_row, from_prev_row + source_count - 1,
+        )
+
+        target_ws.cell(
+            row=from_prev_row, column=1,
+        ).value = "Things to Monitor\nfrom the previous shifts"
+
+        reference_row = from_prev_row
+        for idx, snap in enumerate(source_rows):
+            _write_ticket_row(target_ws, from_prev_row + idx, snap, reference_row)
+
+        if not source_rows:
+            for col in [3, 4, 5, 6]:
+                target_ws.cell(row=from_prev_row, column=col).value = None
+
+        return ttm_row, permalinks_row
+
+    @staticmethod
+    def _reset_ttm(
+        target_ws,
+        ttm_row: int,
+        ttm_end: int,
+        permalinks_row: int,
+    ) -> int:
+        """Clear 'Things to monitor' section to one empty header row.
+
+        Returns the updated permalinks_row after any row deletions.
+        """
+        extra_ttm_rows = ttm_end - ttm_row
+        if extra_ttm_rows > 0:
+            target_ws.delete_rows(ttm_row + 1, extra_ttm_rows)
+            permalinks_row -= extra_ttm_rows
+
+        for col in [3, 4, 5, 6]:
+            cell = target_ws.cell(row=ttm_row, column=col)
+            cell.value = None
+            cell.hyperlink = None
+        _remove_hyperlinks_in_range(target_ws, ttm_row, 3, ttm_row, 6)
+
+        _rebuild_section_merge(target_ws, ttm_row, ttm_row)
+        return permalinks_row
 
     # -- internal: layout scanning -------------------------------------------
 
@@ -696,6 +686,22 @@ def _ensure_permalink_merges(worksheet, permalinks_row: int) -> None:
                 start_row=row_number, start_column=3,
                 end_row=row_number, end_column=6,
             )
+
+
+def _repair_permalinks(worksheet, permalinks_row: int) -> None:
+    """Rebuild Permalinks full-width merge and fix sub-row merges."""
+    for merge_range in list(worksheet.merged_cells.ranges):
+        if (merge_range.min_row == permalinks_row
+                and merge_range.max_row == permalinks_row):
+            worksheet.merged_cells.ranges.remove(merge_range)
+    worksheet.merge_cells(
+        start_row=permalinks_row, start_column=1,
+        end_row=permalinks_row, end_column=6,
+    )
+    _remove_hyperlinks_in_range(
+        worksheet, permalinks_row, 2, permalinks_row, 6,
+    )
+    _ensure_permalink_merges(worksheet, permalinks_row)
 
 
 def _rebuild_section_merge(
