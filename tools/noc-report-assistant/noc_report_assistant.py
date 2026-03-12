@@ -37,7 +37,7 @@ _HYPERLINK_COLOR = _OpenpyxlColor(rgb="FF0052CC")
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 
 DEFAULT_REPORT_PATH = "~/Downloads/NOC endshift report.xlsx"
 SHEETS = ["Night-Shift-NEW", "Day-Shift-NEW"]
@@ -336,7 +336,9 @@ class NOCReportAssistant:
 
         # Step 3: Restructure target "from previous shifts"
         target_layout = self._scan_layout(target_ws)
-        current_count = target_layout.from_prev_end - target_layout.from_prev_row + 1
+        current_count = max(
+            target_layout.from_prev_end - target_layout.from_prev_row + 1, 0,
+        )
         source_count = max(len(source_rows), 1)  # keep at least the header row
         delta = source_count - current_count
 
@@ -365,6 +367,11 @@ class NOCReportAssistant:
             target_layout.from_prev_row,
             target_layout.from_prev_row + source_count - 1,
         )
+
+        # Ensure "from previous shifts" header text exists in cell A
+        target_ws.cell(
+            row=target_layout.from_prev_row, column=1,
+        ).value = "Things to Monitor\nfrom the previous shifts"
 
         # Write source data into target "from previous" rows
         reference_row = target_layout.from_prev_row
@@ -456,9 +463,8 @@ class NOCReportAssistant:
                 break
 
         if from_prev_row is None:
-            raise RuntimeError(
-                "Could not find 'Things to Monitor from the previous shifts' section"
-            )
+            # Section header missing — treat TICKET_START_ROW as implicit start
+            from_prev_row = TICKET_START_ROW
         if ttm_row is None:
             raise RuntimeError("Could not find 'Things to monitor' section")
         if permalinks_row is None:

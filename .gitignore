@@ -90,3 +90,6 @@ noc-toolkit-*.tar.gz
 
 # GitHub Actions artifacts
 artifacts/
+
+# Autoresearch (autonomous agent experiments — isolated from main)
+autoresearch/

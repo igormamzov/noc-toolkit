@@ -271,11 +271,15 @@ python3 tools/data-freshness/data_freshness.py --report      # Run + HTML report
 
 ### 6. NOC Report Assistant
 
-**Purpose:** Sync Jira statuses and add ticket rows to the End-of-Shift Excel report
+**Purpose:** Automate shift handoff, sync Jira statuses, and add ticket rows to the End-of-Shift Excel report
 
 **Features:**
-- Sync statuses — update Jira statuses (column E) for all existing tickets
-- Add row — insert a new ticket to "Things to monitor" section with Jira + Slack links
+- **Start shift** — copy all tickets from previous shift, update date, sync Jira statuses
+- **End shift (SYNC)** — update Jira statuses (column E) for all existing tickets
+- **Add row** — insert a new ticket to "Things to monitor" section with Jira + Slack links
+- Auto-detects section boundaries ("from previous shifts", "Things to monitor", "Permalinks")
+- Handles insert/delete rows when ticket count differs between shifts
+- Month boundary handling (e.g. Mar 31 → Apr 1)
 - Auto-detects Jira and Slack links in any paste order
 - Preserves all Excel formatting, merges, and hyperlinks
 - Works with both Night-Shift-NEW and Day-Shift-NEW sheets
@@ -464,6 +468,10 @@ noc-toolkit/
 - ✅ Automate post-DSSD escalation: link DRGN→DSSD, transition to Escalated, PD note, Slack template
 - ✅ Auto-detect DRGN via PD Jira integration field (`external_references`)
 - ✅ Registered as tool #7 in noc-toolkit menu
+
+### noc-report-assistant v0.1.4 (2026-03-11)
+
+- ✅ Fix: handle missing "from the previous shifts" section header (fallback to row 8)
 
 ### noc-report-assistant v0.1.3 (2026-03-09)
 

@@ -32,7 +32,7 @@ All components are currently in **0.x.x** version, indicating active development
 | **pd-merge**               | 0.2.3   | Development   | Find and merge related PD incidents by job name|
 | **pd-escalate**            | 0.1.0   | Development   | Post-DSSD escalation workflow automation       |
 | **data-freshness**         | 0.1.0   | Development   | DACSCAN data freshness report via Databricks SQL|
-| **noc-report-assistant**   | 0.1.3   | Development   | Sync Jira statuses into End-of-Shift Excel report|
+| **noc-report-assistant**   | 0.1.4   | Development   | Sync Jira statuses into End-of-Shift Excel report|
 
 ---
 
@@ -93,6 +93,14 @@ print(f"Version: {VERSION}")
 - PD note with escalation summary + Jira URL
 - Slack template output for #cds-ops-24x7-int with hyperlink instructions
 - Dry-run mode for safe testing
+
+### noc-report-assistant v0.1.4 (2026-03-11)
+
+**Fix: handle missing "from the previous shifts" section header:**
+- `_scan_layout()` no longer crashes when the "Things to Monitor from the previous shifts" header is absent
+- Falls back to `TICKET_START_ROW` (row 8) as implicit section start
+- `start_shift()` now writes the header text into cell A when missing
+- Handles `current_count=0` edge case (empty section before "Things to monitor")
 
 ### noc-report-assistant v0.1.3 (2026-03-09)
 
@@ -316,5 +324,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-03-07
+**Last Updated:** 2026-03-09
 **Maintained by:** NOC Team

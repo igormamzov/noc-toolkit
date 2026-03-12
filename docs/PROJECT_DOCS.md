@@ -237,20 +237,32 @@ Designed to run every 10 minutes via cron:
 
 **Location:** `tools/noc-report-assistant/`
 **Main Script:** `noc_report_assistant.py`
-**Version:** 0.1.1
-**Purpose:** Sync Jira statuses and add ticket rows to the End-of-Shift Excel report
+**Version:** 0.1.4
+**Purpose:** Automate shift handoff, sync Jira statuses, and add ticket rows to the End-of-Shift Excel report
 
 **Key Features:**
-- Sync statuses — update Jira statuses (column E) for all existing tickets
-- Add row — insert a new ticket to "Things to monitor" section with Jira + Slack links
+- **Start shift** — copy all tickets from previous shift, update date, sync Jira statuses
+- **End shift (SYNC)** — update Jira statuses (column E) for all existing tickets
+- **Add row** — insert a new ticket to "Things to monitor" section with Jira + Slack links
+- Auto-detects section boundaries via `_scan_layout()` (`ShiftLayout` dataclass)
+- Handles insert/delete rows when ticket count differs between shifts
+- Month boundary handling (e.g. Mar 31 → Apr 1) via `_update_date()`
 - Auto-detects Jira and Slack links in any paste order
 - Preserves all Excel formatting, merges, and hyperlinks
 - Works with both Night-Shift-NEW and Day-Shift-NEW sheets
+
+**Menu:**
+```
+1. Start shift       — copy tickets from previous shift, update date, sync
+2. End shift (SYNC)  — sync Jira statuses for all existing tickets
+3. Add row           — add new ticket row to the report
+```
 
 **Configuration:**
 - Requires Jira credentials via environment variables:
   - `JIRA_SERVER_URL`
   - `JIRA_PERSONAL_ACCESS_TOKEN`
+- Optional: `NOC_REPORT_PATH` (default: `~/Downloads/NOC endshift report.xlsx`)
 
 ### 7. PD Escalation Tool
 
@@ -651,4 +663,4 @@ Internal tool for organizational use only.
 
 ---
 
-**Last Updated:** 2026-03-07
+**Last Updated:** 2026-03-09
