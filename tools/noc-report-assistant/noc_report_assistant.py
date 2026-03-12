@@ -420,6 +420,13 @@ class NOCReportAssistant:
             target_ws.delete_rows(ttm_row + 1, extra_ttm_rows)
             permalinks_row -= extra_ttm_rows
 
+        # Remove ALL merges on the TTM row (A:F leftovers from delete_rows
+        # shifting Permalinks merge, or auto-cloned wide merges).
+        for merge_range in list(target_ws.merged_cells.ranges):
+            if (merge_range.min_row == ttm_row
+                    and merge_range.max_row == ttm_row):
+                target_ws.merged_cells.ranges.remove(merge_range)
+
         for col in [3, 4, 5, 6]:
             cell = target_ws.cell(row=ttm_row, column=col)
             cell.value = None
