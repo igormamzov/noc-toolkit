@@ -462,6 +462,11 @@ noc-toolkit/
 
 ## 🔄 Version History
 
+### pd-merge v0.2.4 (2026-03-12)
+
+- ✅ Extracted `_parse_iso_dt()` helper — deduplicates 7 repeated ISO datetime parsing patterns
+- ✅ 70 unit tests added (pytest)
+
 ### data-freshness v0.1.1 (2026-03-12)
 
 - ✅ Extracted `_is_fresh_date()` helper — deduplicates 5 repeated freshness date checks

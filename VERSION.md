@@ -29,7 +29,7 @@ All components are currently in **0.x.x** version, indicating active development
 | **pd-monitor**             | 0.1.3   | Development   | Auto-acknowledge triggered PagerDuty incidents |
 | **pd-jira-tool**           | 0.3.1   | Development   | PagerDuty-Jira integration and sync tool       |
 | **pagerduty-job-extractor**| 0.1.0   | Development   | Extract failed job names from PD incidents     |
-| **pd-merge**               | 0.2.3   | Development   | Find and merge related PD incidents by job name|
+| **pd-merge**               | 0.2.4   | Development   | Find and merge related PD incidents by job name|
 | **pd-escalate**            | 0.1.1   | Development   | Post-DSSD escalation workflow automation       |
 | **data-freshness**         | 0.1.1   | Development   | DACSCAN data freshness report via Databricks SQL|
 | **noc-report-assistant**   | 0.1.5   | Development   | Sync Jira statuses into End-of-Shift Excel report|
@@ -81,6 +81,12 @@ print(f"Version: {VERSION}")
 - CLI: `--pd` (incident ID or URL), `--dssd` (required), `--drgn` (optional), `--dry-run`
 - No new dependencies — reuses `pagerduty` + `jira` libs already in requirements.txt
 - Registered as tool #7 in noc-toolkit menu
+
+### pd-merge v0.2.4 (2026-03-12)
+
+**Refactor: deduplicate ISO datetime parsing, add tests:**
+- Extracted `_parse_iso_dt()` helper — replaces 7 duplicate `datetime.fromisoformat(iso_str.replace('Z', '+00:00'))` patterns
+- 70 unit tests added (pytest)
 
 ### data-freshness v0.1.1 (2026-03-12)
 

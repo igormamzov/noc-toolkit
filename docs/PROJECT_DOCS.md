@@ -146,7 +146,7 @@ Designed to run every 10 minutes via cron:
 
 **Location:** `tools/pd-merge/`
 **Main Script:** `pd_merge.py`
-**Version:** 0.2.3
+**Version:** 0.2.4
 **Purpose:** Find and merge related PagerDuty incidents that share the same root cause (same job/DAG name)
 
 **Key Features:**
@@ -546,6 +546,12 @@ Logs are stored in the `logs/` directory (created automatically):
 ---
 
 ## 🔄 Version History
+
+### pd-merge v0.2.4 (2026-03-12)
+
+**Refactor: deduplicate ISO datetime parsing, add tests:**
+- Extracted `_parse_iso_dt()` helper — replaces 7 duplicate `datetime.fromisoformat(iso_str.replace('Z', '+00:00'))` patterns
+- 70 unit tests added (pytest)
 
 ### data-freshness v0.1.1 (2026-03-12)
 

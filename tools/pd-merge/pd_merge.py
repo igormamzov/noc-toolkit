@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 # Version information
-VERSION = "0.2.3"
+VERSION = "0.2.4"
 
 # Skip file: stores incident IDs that the user explicitly skipped,
 # so they don't reappear on subsequent runs.
@@ -117,6 +117,16 @@ ALERT_TYPE_LABELS: Dict[str, str] = {
     'consequential': 'Consequential failure',
     'unknown': 'Unknown',
 }
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_iso_dt(iso_str: str) -> datetime:
+    """Parse an ISO 8601 datetime string (with optional trailing 'Z') into a timezone-aware datetime."""
+    return datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
 
 
 # ---------------------------------------------------------------------------
@@ -482,9 +492,7 @@ class PagerDutyMergeTool:
         dates = set()
         for inc in incidents:
             try:
-                dt = datetime.fromisoformat(
-                    inc.created_at.replace('Z', '+00:00')
-                )
+                dt = _parse_iso_dt(inc.created_at)
                 dates.add(dt.date())
             except (ValueError, AttributeError):
                 return False
@@ -541,16 +549,12 @@ class PagerDutyMergeTool:
 
         # Check if any new incidents might belong to a mass failure
         if mass_failure_incident:
-            mass_created = datetime.fromisoformat(
-                mass_failure_incident.created_at.replace('Z', '+00:00')
-            )
+            mass_created = _parse_iso_dt(mass_failure_incident.created_at)
             new_incidents_in_mass_window = [
                 inc for inc in incidents
                 if inc.incident_id != mass_failure_incident.incident_id
                 and not inc.jira_tickets
-                and datetime.fromisoformat(
-                    inc.created_at.replace('Z', '+00:00')
-                ) >= mass_created
+                and _parse_iso_dt(inc.created_at) >= mass_created
             ]
             if new_incidents_in_mass_window:
                 merge_group.skip_reason = (
@@ -587,9 +591,7 @@ class PagerDutyMergeTool:
         - Likely: same time window, Databricks/Monitor/AirFlow, no own ticket
         - Consequential: data delayed / step not started on time
         """
-        mass_created = datetime.fromisoformat(
-            mass_failure_incident.created_at.replace('Z', '+00:00')
-        )
+        mass_created = _parse_iso_dt(mass_failure_incident.created_at)
 
         # Fetch alerts for the mass-failure incident to build known-jobs set
         known_jobs: set = set()
@@ -634,9 +636,7 @@ class PagerDutyMergeTool:
 
             # Skip incidents created before the mass failure
             try:
-                inc_created = datetime.fromisoformat(
-                    inc.created_at.replace('Z', '+00:00')
-                )
+                inc_created = _parse_iso_dt(inc.created_at)
                 if inc_created < mass_created:
                     continue
             except (ValueError, AttributeError):
@@ -1028,7 +1028,7 @@ class PagerDutyMergeTool:
     def _format_time(iso_str: str) -> str:
         """Format incident age as dd:hh:mm from creation to now."""
         try:
-            dt = datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
+            dt = _parse_iso_dt(iso_str)
             now = datetime.now(timezone.utc)
             delta = now - dt
             total_seconds = int(delta.total_seconds())
@@ -1045,7 +1045,7 @@ class PagerDutyMergeTool:
     def _format_date(iso_str: str) -> str:
         """Extract MM-DD from ISO 8601 datetime string."""
         try:
-            dt = datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
+            dt = _parse_iso_dt(iso_str)
             return dt.strftime('%m-%d')
         except (ValueError, AttributeError):
             return '??-??'
