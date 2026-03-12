@@ -65,7 +65,7 @@ print(f"Version: {VERSION}")
 
 ## Version History
 
-### pd-monitor v0.1.4 (2026-03-13)
+### pd-monitor v0.1.4 (2026-03-12)
 
 **Bug fix: monitor stops acknowledging after ~30 min + refactor:**
 - `processed_incidents` set was never cleared between check cycles — after PagerDuty auto-un-acknowledges (~30 min), re-triggered incidents were permanently skipped
@@ -379,5 +379,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-03-14
+**Last Updated:** 2026-03-12
 **Maintained by:** NOC Team

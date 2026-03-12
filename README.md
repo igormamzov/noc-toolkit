@@ -462,7 +462,7 @@ noc-toolkit/
 
 ## 🔄 Version History
 
-### pd-monitor v0.1.4 (2026-03-13)
+### pd-monitor v0.1.4 (2026-03-12)
 
 - ✅ **Bug fix:** `processed_incidents` set was never cleared between check cycles — after PagerDuty auto-un-acknowledges (~30 min), re-triggered incidents were permanently skipped as "already processed"
 - ✅ Cached user email at init — eliminates redundant `GET /users/{id}` call on every acknowledge
