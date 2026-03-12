@@ -8,6 +8,7 @@ import pytest
 # Make tool modules importable
 TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
 sys.path.insert(0, str(TOOLS_DIR / "noc-report-assistant"))
+sys.path.insert(0, str(TOOLS_DIR / "pd-escalate"))
 
 
 # ---------------------------------------------------------------------------
