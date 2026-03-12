@@ -37,7 +37,7 @@ _HYPERLINK_COLOR = _OpenpyxlColor(rgb="FF0052CC")
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-VERSION = "0.1.5"
+VERSION = "0.1.6"
 
 DEFAULT_REPORT_PATH = "~/Downloads/NOC endshift report.xlsx"
 SHEETS = ["Night-Shift-NEW", "Day-Shift-NEW"]
@@ -201,11 +201,11 @@ class NOCReportAssistant:
             target_row = permalinks_row
             new_permalinks_row = permalinks_row + 1
 
-            # insert_rows may duplicate merges onto the new row — remove them
+            # insert_rows may duplicate merges onto the new row — remove ALL
+            # (both A:B and wider). The correct merges are rebuilt below.
             for merge_range in list(worksheet.merged_cells.ranges):
                 if (merge_range.min_row == target_row
-                        and merge_range.max_row == target_row
-                        and merge_range.max_col > 2):
+                        and merge_range.max_row == target_row):
                     worksheet.merged_cells.ranges.remove(merge_range)
 
             # Expand "Things to monitor" A:B merge to cover all ticket rows
@@ -369,12 +369,14 @@ class NOCReportAssistant:
 
         if delta > 0:
             target_ws.insert_rows(target_layout.ttm_row, delta)
+            # Remove ALL merges auto-cloned onto the inserted rows by openpyxl
+            # (both A:B and wider merges). _rebuild_section_merge will recreate
+            # the correct A:B merge later.
+            new_start = target_layout.ttm_row
+            new_end = target_layout.ttm_row + delta - 1
             for merge_range in list(target_ws.merged_cells.ranges):
-                new_start = target_layout.ttm_row
-                new_end = target_layout.ttm_row + delta - 1
                 if (new_start <= merge_range.min_row <= new_end
-                        and merge_range.min_row == merge_range.max_row
-                        and merge_range.max_col > 2):
+                        and merge_range.min_row == merge_range.max_row):
                     target_ws.merged_cells.ranges.remove(merge_range)
         elif delta < 0:
             delete_start = target_layout.from_prev_row + source_count
@@ -707,11 +709,17 @@ def _repair_permalinks(worksheet, permalinks_row: int) -> None:
 def _rebuild_section_merge(
     worksheet, start_row: int, end_row: int, max_col: int = 2,
 ) -> None:
-    """Remove existing A:B merge that covers start_row, then recreate for the new range."""
+    """Remove ALL A:B merges overlapping [start_row, end_row], then recreate.
+
+    Previous logic only removed merges containing start_row, which missed
+    single-row A:B merges auto-created by insert_rows on intermediate rows.
+    Those orphaned merges overlapped with the new range → corrupt XLSX.
+    """
     for merge_range in list(worksheet.merged_cells.ranges):
         if (merge_range.min_col == 1
                 and merge_range.max_col <= max_col
-                and merge_range.min_row <= start_row <= merge_range.max_row):
+                and merge_range.min_row <= end_row
+                and merge_range.max_row >= start_row):
             worksheet.merged_cells.ranges.remove(merge_range)
     if start_row <= end_row:
         worksheet.merge_cells(
