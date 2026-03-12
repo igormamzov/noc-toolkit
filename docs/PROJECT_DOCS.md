@@ -88,16 +88,18 @@ noc-toolkit/
 
 **Location:** `tools/pagerduty-job-extractor/`
 **Main Script:** `extract_jobs.py`
-**Purpose:** Extracts and analyzes PagerDuty on-call schedules and job assignments
+**Version:** 0.1.1
+**Purpose:** Extracts failed job names (`jb_*` pattern) from PagerDuty incident alerts, notes, and nested data structures
 
 **Key Features:**
-- Fetches PagerDuty schedules
-- Extracts on-call rotation data
-- Generates reports on job assignments
-- Exports data in various formats (CSV, JSON)
+- Extracts job names matching `jb_*` regex from incident data, alerts, and notes
+- Recursive extraction from nested dict/list structures
+- Accepts both incident IDs and full PagerDuty URLs
+- Returns sorted, deduplicated list of job names
+- Supports `.env` configuration and parent directory `.env` fallback
 
 **Configuration:**
-- Requires PagerDuty API token
+- Requires PagerDuty API token (`PAGERDUTY_API_TOKEN`)
 - Configured via environment variables or `.env` file
 
 ### 3. PagerDuty Monitor

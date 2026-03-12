@@ -462,6 +462,12 @@ noc-toolkit/
 
 ## 🔄 Version History
 
+### pagerduty-job-extractor v0.1.1 (2026-03-12)
+
+- ✅ Removed `sys.exit(1)` from business logic — exceptions propagate to caller
+- ✅ Fixed `any` → `Any` type hint, removed intermediate `list()` calls on iterators
+- ✅ 39 unit tests added (pytest)
+
 ### pd-merge v0.2.4 (2026-03-12)
 
 - ✅ Extracted `_parse_iso_dt()` helper — deduplicates 7 repeated ISO datetime parsing patterns

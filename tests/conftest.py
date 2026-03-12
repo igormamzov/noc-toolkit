@@ -11,6 +11,7 @@ sys.path.insert(0, str(TOOLS_DIR / "noc-report-assistant"))
 sys.path.insert(0, str(TOOLS_DIR / "pd-escalate"))
 sys.path.insert(0, str(TOOLS_DIR / "data-freshness"))
 sys.path.insert(0, str(TOOLS_DIR / "pd-merge"))
+sys.path.insert(0, str(TOOLS_DIR / "pagerduty-job-extractor"))
 
 
 # ---------------------------------------------------------------------------

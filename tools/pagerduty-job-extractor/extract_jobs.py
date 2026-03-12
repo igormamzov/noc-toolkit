@@ -9,11 +9,11 @@ import os
 import re
 import sys
 import warnings
-from typing import Set, List
+from typing import Any, Set, List
 from dotenv import load_dotenv
 
 # Version information
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 # Suppress pagination warnings from pagerduty package
 warnings.filterwarnings('ignore', message='.*lacks a "more" property.*')
@@ -54,7 +54,7 @@ class PagerDutyJobExtractor:
             return []
         return self.JOB_PATTERN.findall(text)
 
-    def extract_jobs_from_dict(self, data: any) -> Set[str]:
+    def extract_jobs_from_dict(self, data: Any) -> Set[str]:
         """
         Recursively extract jobs from nested dictionary/list structures.
 
@@ -102,46 +102,32 @@ class PagerDutyJobExtractor:
         Returns:
             Sorted list of unique job names
         """
-        all_jobs = set()
+        all_jobs: Set[str] = set()
 
-        try:
-            # Get incident details
-            incident = self.pagerduty_session.rget(f'incidents/{incident_id}')
-            if isinstance(incident, dict) and 'incident' in incident:
-                incident_data = incident['incident']
-            else:
-                incident_data = incident
+        # Get incident details
+        incident = self.pagerduty_session.rget(f'incidents/{incident_id}')
+        if isinstance(incident, dict) and 'incident' in incident:
+            incident_data = incident['incident']
+        else:
+            incident_data = incident
 
-            # Extract jobs from incident data itself
-            incident_jobs = self.extract_jobs_from_dict(incident_data)
-            if incident_jobs:
-                all_jobs.update(incident_jobs)
+        # Extract jobs from incident data itself
+        incident_jobs = self.extract_jobs_from_dict(incident_data)
+        if incident_jobs:
+            all_jobs.update(incident_jobs)
 
-            # Get alerts and extract jobs from each alert
-            alerts = self.pagerduty_session.list_all(f'incidents/{incident_id}/alerts')
-            alerts_list = list(alerts)
+        # Get alerts and extract jobs from each alert
+        for alert in self.pagerduty_session.list_all(f'incidents/{incident_id}/alerts'):
+            alert_jobs = self.extract_jobs_from_dict(alert)
+            if alert_jobs:
+                all_jobs.update(alert_jobs)
 
-            for alert in alerts_list:
-                alert_jobs = self.extract_jobs_from_dict(alert)
-                if alert_jobs:
-                    all_jobs.update(alert_jobs)
-
-            # Get notes and extract jobs
-            notes = self.pagerduty_session.list_all(f'incidents/{incident_id}/notes')
-            notes_list = list(notes)
-
-            for note in notes_list:
-                content = note.get('content', '')
-                note_jobs = self.extract_jobs_from_text(content)
-                if note_jobs:
-                    all_jobs.update(note_jobs)
-
-        except pagerduty.Error as error:
-            print(f"Error: Failed to fetch incident data: {error}", file=sys.stderr)
-            sys.exit(1)
-        except Exception as error:
-            print(f"Error: An unexpected error occurred: {error}", file=sys.stderr)
-            sys.exit(1)
+        # Get notes and extract jobs
+        for note in self.pagerduty_session.list_all(f'incidents/{incident_id}/notes'):
+            content = note.get('content', '')
+            note_jobs = self.extract_jobs_from_text(content)
+            if note_jobs:
+                all_jobs.update(note_jobs)
 
         return sorted(all_jobs)
 
@@ -200,17 +186,19 @@ def main() -> None:
     try:
         extractor = PagerDutyJobExtractor(pagerduty_api_token=pagerduty_api_token)
         jobs = extractor.get_jobs_from_incident(incident_id)
-
-        # Print results (just the list)
-        if jobs:
-            for job in jobs:
-                print(job)
-        else:
-            print("No jobs matching jb_* pattern were found", file=sys.stderr)
-            sys.exit(1)
-
+    except pagerduty.Error as error:
+        print(f"Error: Failed to fetch incident data: {error}", file=sys.stderr)
+        sys.exit(1)
     except Exception as error:
         print(f"Error: {error}", file=sys.stderr)
+        sys.exit(1)
+
+    # Print results (just the list)
+    if jobs:
+        for job in jobs:
+            print(job)
+    else:
+        print("No jobs matching jb_* pattern were found", file=sys.stderr)
         sys.exit(1)
 
 
