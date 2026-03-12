@@ -103,7 +103,7 @@ noc-toolkit/
 - Requires PagerDuty API token (`PAGERDUTY_API_TOKEN`)
 - Configured via environment variables or `.env` file
 
-### 3. PagerDuty Monitor
+### 3. PagerDuty Monitor (v0.1.4)
 
 **Location:** `tools/pd-monitor/`
 **Main Script:** `pd_monitor.py`

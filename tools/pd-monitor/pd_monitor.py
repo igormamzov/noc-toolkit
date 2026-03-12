@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Set
 from dotenv import load_dotenv
 
 # Version information
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 
 # Title patterns for silent acknowledge (ack only, no comment).
 # If an incident title contains any of these substrings (case-insensitive),
@@ -113,6 +113,7 @@ class PagerDutyMonitor:
         self.details = details
         self.background = background
         self.user_id = self._get_current_user_id()
+        self.user_email = self._get_user_email()
         self.processed_incidents: Set[str] = set()
 
     def _get_current_user_id(self) -> str:
@@ -123,22 +124,27 @@ class PagerDutyMonitor:
             User ID string
 
         Raises:
-            SystemExit if unable to get user ID
+            RuntimeError if unable to get user ID
         """
-        try:
-            response = self.pagerduty_session.get('users/me')
-            data = response.json()
-            user_id = data.get('user', {}).get('id')
-            if not user_id:
-                print("Error: Unable to get user ID from API", file=sys.stderr)
-                sys.exit(1)
-            return user_id
-        except pagerduty.Error as e:
-            print(f"Error: Unable to authenticate with PagerDuty: {e}", file=sys.stderr)
-            sys.exit(1)
-        except Exception as e:
-            print(f"Error: Unable to get user ID: {e}", file=sys.stderr)
-            sys.exit(1)
+        response = self.pagerduty_session.get('users/me')
+        data = response.json()
+        user_id = data.get('user', {}).get('id')
+        if not user_id:
+            raise RuntimeError("Unable to get user ID from PagerDuty API")
+        return user_id
+
+    def _get_user_email(self) -> str:
+        """Fetch and cache the current user's email for the From header.
+
+        Raises:
+            RuntimeError if unable to get user email
+        """
+        response = self.pagerduty_session.get(f'users/{self.user_id}')
+        data = response.json()
+        email = data.get('user', {}).get('email')
+        if not email:
+            raise RuntimeError("Unable to get user email from PagerDuty API")
+        return email
 
     @staticmethod
     def _is_silent_ack(title: str) -> bool:
@@ -299,16 +305,6 @@ class PagerDutyMonitor:
             return True
 
         try:
-            # Get current user email for the From header
-            user_response = self.pagerduty_session.get(f'users/{self.user_id}')
-            user_data = user_response.json()
-            user_email = user_data.get('user', {}).get('email')
-
-            if not user_email:
-                print(f"Error: Unable to get user email for acknowledgment", file=sys.stderr)
-                return False
-
-            # Acknowledge the incident
             ack_data = {
                 'incidents': [
                     {
@@ -319,7 +315,7 @@ class PagerDutyMonitor:
                 ]
             }
 
-            headers = {'From': user_email}
+            headers = {'From': self.user_email}
             self.pagerduty_session.rput('incidents', json=ack_data, headers=headers)
             return True
         except pagerduty.Error as e:
@@ -519,6 +515,12 @@ class PagerDutyMonitor:
         Returns:
             Summary dictionary with results
         """
+        # Clear processed set so re-triggered incidents get re-acknowledged.
+        # PagerDuty auto-un-acknowledges after ~30 min of inactivity,
+        # flipping the incident back to "triggered".  Without this reset
+        # the monitor would skip it forever as "already_processed".
+        self.processed_incidents.clear()
+
         # Get triggered incidents
         incidents = self.get_triggered_incidents()
 
@@ -885,9 +887,9 @@ def main() -> None:
     # Create monitor instance
     try:
         monitor = PagerDutyMonitor(**config)
-    except SystemExit:
-        # Re-raise SystemExit from initialization
-        raise
+    except (RuntimeError, pagerduty.Error) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     # If duration not specified and not single-check mode, show menu
     if args.duration is None and not args.once:

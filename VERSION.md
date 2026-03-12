@@ -26,7 +26,7 @@ All components are currently in **0.x.x** version, indicating active development
 | Component                  | Version | Status        | Description                                    |
 |----------------------------|---------|---------------|------------------------------------------------|
 | **noc-toolkit**            | 0.6.0   | Development   | Main toolkit launcher and orchestrator         |
-| **pd-monitor**             | 0.1.3   | Development   | Auto-acknowledge triggered PagerDuty incidents |
+| **pd-monitor**             | 0.1.4   | Development   | Auto-acknowledge triggered PagerDuty incidents |
 | **pd-jira-tool**           | 0.3.2   | Development   | PagerDuty-Jira integration and sync tool       |
 | **pagerduty-job-extractor**| 0.1.1   | Development   | Extract failed job names from PD incidents     |
 | **pd-merge**               | 0.2.4   | Development   | Find and merge related PD incidents by job name|
@@ -64,6 +64,15 @@ print(f"Version: {VERSION}")
 ---
 
 ## Version History
+
+### pd-monitor v0.1.4 (2026-03-13)
+
+**Bug fix: monitor stops acknowledging after ~30 min + refactor:**
+- `processed_incidents` set was never cleared between check cycles — after PagerDuty auto-un-acknowledges (~30 min), re-triggered incidents were permanently skipped
+- Added `self.processed_incidents.clear()` at the start of `check_incidents_once()`
+- Cached user email in `self.user_email` at init — removed redundant `GET /users/{id}` on every `acknowledge_incident()` call
+- Removed `sys.exit(1)` from `_get_current_user_id()` — raises `RuntimeError`; `main()` handles exit codes
+- 97 unit tests added (pytest)
 
 ### pd-merge v0.2.3 (2026-03-08)
 
@@ -370,5 +379,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-03-13
+**Last Updated:** 2026-03-14
 **Maintained by:** NOC Team

@@ -462,6 +462,13 @@ noc-toolkit/
 
 ## 🔄 Version History
 
+### pd-monitor v0.1.4 (2026-03-13)
+
+- ✅ **Bug fix:** `processed_incidents` set was never cleared between check cycles — after PagerDuty auto-un-acknowledges (~30 min), re-triggered incidents were permanently skipped as "already processed"
+- ✅ Cached user email at init — eliminates redundant `GET /users/{id}` call on every acknowledge
+- ✅ Removed `sys.exit(1)` from `_get_current_user_id()` — raises `RuntimeError` instead
+- ✅ 97 unit tests added (pytest)
+
 ### pd-jira-tool v0.3.2 (2026-03-12)
 
 - ✅ Extracted `_parse_iso_dt()` and `_is_assigned_to_user()` helpers — deduplicates ISO parsing and user-filter logic
