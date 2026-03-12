@@ -237,7 +237,7 @@ Designed to run every 10 minutes via cron:
 
 **Location:** `tools/noc-report-assistant/`
 **Main Script:** `noc_report_assistant.py`
-**Version:** 0.1.4
+**Version:** 0.1.5
 **Purpose:** Automate shift handoff, sync Jira statuses, and add ticket rows to the End-of-Shift Excel report
 
 **Key Features:**
@@ -556,6 +556,22 @@ Logs are stored in the `logs/` directory (created automatically):
 - CLI: `--pd`, `--dssd`, `--drgn` (optional), `--dry-run`
 - Registered as tool #7 in noc-toolkit menu
 - No new dependencies
+
+### noc-report-assistant v0.1.5 (2026-03-11)
+
+**Refactor: unified layout scanning, reduced I/O, extracted sub-methods:**
+- `run()` and `add_row()` now use `_scan_layout()` instead of manual loops; removed `STOP_MARKERS`
+- `start_shift()` reduced from 6 `_scan_layout()` calls to 2 via arithmetic position tracking
+- Single file I/O pass: in-memory sync via `run(_worksheet=)` eliminates double load/save
+- Extracted `_restructure_from_prev()`, `_reset_ttm()`, `_repair_permalinks()` sub-methods
+- 46 unit tests added (pytest)
+
+### noc-report-assistant v0.1.4 (2026-03-11)
+
+**Fix: handle missing "from the previous shifts" section header:**
+- `_scan_layout()` no longer crashes when the "Things to Monitor from the previous shifts" header is absent
+- Falls back to `TICKET_START_ROW` (row 8) as implicit section start
+- `start_shift()` now writes the header text into cell A when missing
 
 ### noc-report-assistant v0.1.3 (2026-03-09)
 

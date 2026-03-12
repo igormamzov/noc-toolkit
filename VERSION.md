@@ -32,7 +32,7 @@ All components are currently in **0.x.x** version, indicating active development
 | **pd-merge**               | 0.2.3   | Development   | Find and merge related PD incidents by job name|
 | **pd-escalate**            | 0.1.0   | Development   | Post-DSSD escalation workflow automation       |
 | **data-freshness**         | 0.1.0   | Development   | DACSCAN data freshness report via Databricks SQL|
-| **noc-report-assistant**   | 0.1.4   | Development   | Sync Jira statuses into End-of-Shift Excel report|
+| **noc-report-assistant**   | 0.1.5   | Development   | Sync Jira statuses into End-of-Shift Excel report|
 
 ---
 
@@ -93,6 +93,15 @@ print(f"Version: {VERSION}")
 - PD note with escalation summary + Jira URL
 - Slack template output for #cds-ops-24x7-int with hyperlink instructions
 - Dry-run mode for safe testing
+
+### noc-report-assistant v0.1.5 (2026-03-11)
+
+**Refactor: unified layout scanning, reduced I/O, extracted sub-methods:**
+- `run()` and `add_row()` now use `_scan_layout()` instead of manual loops; removed `STOP_MARKERS`
+- `start_shift()` reduced from 6 `_scan_layout()` calls to 2 via arithmetic position tracking
+- Single file I/O pass: in-memory sync via `run(_worksheet=)` eliminates double load/save
+- Extracted `_restructure_from_prev()`, `_reset_ttm()`, `_repair_permalinks()` sub-methods
+- 46 unit tests added (pytest)
 
 ### noc-report-assistant v0.1.4 (2026-03-11)
 
@@ -324,5 +333,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-03-09
+**Last Updated:** 2026-03-11
 **Maintained by:** NOC Team

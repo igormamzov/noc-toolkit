@@ -469,6 +469,13 @@ noc-toolkit/
 - ✅ Auto-detect DRGN via PD Jira integration field (`external_references`)
 - ✅ Registered as tool #7 in noc-toolkit menu
 
+### noc-report-assistant v0.1.5 (2026-03-11)
+
+- ✅ Refactor: unified layout scanning via `_scan_layout()` in all methods, removed `STOP_MARKERS`
+- ✅ Single file I/O pass in `start_shift()` (was double load/save), reduced `_scan_layout()` calls from 6 to 2
+- ✅ Extracted sub-methods: `_restructure_from_prev()`, `_reset_ttm()`, `_repair_permalinks()`
+- ✅ 46 unit tests added (pytest)
+
 ### noc-report-assistant v0.1.4 (2026-03-11)
 
 - ✅ Fix: handle missing "from the previous shifts" section header (fallback to row 8)

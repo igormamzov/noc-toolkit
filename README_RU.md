@@ -599,6 +599,13 @@ noc-toolkit/
 - ✅ Автоопределение DRGN через PD Jira integration field (`external_references`)
 - ✅ Зарегистрирован как инструмент #7 в меню noc-toolkit
 
+### noc-report-assistant v0.1.5 (2026-03-11)
+
+- ✅ Рефакторинг: единый `_scan_layout()` во всех методах, удалён `STOP_MARKERS`
+- ✅ Один проход I/O в `start_shift()` (было двойное чтение/запись), `_scan_layout()` вызовов: 6→2
+- ✅ Выделены подметоды: `_restructure_from_prev()`, `_reset_ttm()`, `_repair_permalinks()`
+- ✅ 46 юнит-тестов (pytest)
+
 ### noc-report-assistant v0.1.4 (2026-03-11)
 
 - ✅ Фикс: обработка отсутствующего заголовка "from the previous shifts" (фоллбэк на строку 8)
