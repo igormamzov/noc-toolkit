@@ -1,4 +1,4 @@
-"""Tests for pd-escalate tool (PD Escalation Tool v0.1.0)."""
+"""Tests for pd-escalate tool (PD Escalation Tool v0.1.1)."""
 
 from unittest.mock import MagicMock, patch, call
 from typing import Any, Dict, List, Optional
@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional
 import pytest
 
 # Must be importable via conftest.py sys.path setup
-import pd_escalate
 from pd_escalate import EscalateTool, extract_incident_id, DRGN_PATTERN
 
 
@@ -301,9 +300,6 @@ class TestAddPdNote:
         tool.user_email = "test@example.com"
         dssd_info = {"status": "Open", "assignee": "John Doe"}
 
-        # Set JIRA_BASE_URL for note content
-        pd_escalate.JIRA_BASE_URL = "https://jira.example.com/browse"
-
         tool.add_pd_note("ABC123", "DRGN-15087", "DSSD-29386", dssd_info)
 
         tool.pd_client.rpost.assert_called_once()
@@ -316,7 +312,6 @@ class TestAddPdNote:
 
     def test_dry_run_no_api_call(self):
         tool = _make_tool(dry_run=True)
-        pd_escalate.JIRA_BASE_URL = "https://jira.example.com/browse"
         dssd_info = {"status": "Open", "assignee": "John Doe"}
         tool.add_pd_note("ABC123", "DRGN-15087", "DSSD-29386", dssd_info)
         tool.pd_client.rpost.assert_not_called()
@@ -324,7 +319,6 @@ class TestAddPdNote:
     def test_api_error_raises(self):
         tool = _make_tool(dry_run=False)
         tool.user_email = "test@example.com"
-        pd_escalate.JIRA_BASE_URL = "https://jira.example.com/browse"
         import pagerduty
         tool.pd_client.rpost.side_effect = pagerduty.Error("fail")
         with pytest.raises(RuntimeError, match="Failed to add PD note"):
@@ -337,7 +331,6 @@ class TestPrintSlackTemplate:
 
     def test_contains_dssd_key(self, capsys):
         tool = _make_tool()
-        pd_escalate.JIRA_BASE_URL = "https://jira.example.com/browse"
         tool.print_slack_template("DSSD-29386", "Incident Title", "Error desc")
         output = capsys.readouterr().out
         assert "DSSD-29386" in output
@@ -352,8 +345,6 @@ class TestRunWorkflow:
 
     def _setup_full_mocks(self, tool: EscalateTool, drgn_in_refs: bool = True):
         """Set up mocks for a full successful workflow."""
-        pd_escalate.JIRA_BASE_URL = "https://jira.example.com/browse"
-
         # Step 1: get_current_user
         tool.pd_client.rget.side_effect = [
             # users/me
@@ -404,7 +395,6 @@ class TestRunWorkflow:
 
     def test_auto_detect_drgn_from_notes_fallback(self):
         tool = _make_tool(dry_run=False)
-        pd_escalate.JIRA_BASE_URL = "https://jira.example.com/browse"
 
         # users/me + incident (no DRGN in refs)
         tool.pd_client.rget.side_effect = [
@@ -426,9 +416,8 @@ class TestRunWorkflow:
             outwardIssue="DSSD-29386",
         )
 
-    def test_no_drgn_found_exits(self):
+    def test_no_drgn_found_raises(self):
         tool = _make_tool(dry_run=False)
-        pd_escalate.JIRA_BASE_URL = "https://jira.example.com/browse"
 
         tool.pd_client.rget.side_effect = [
             {"user": {"id": "USER1", "email": "noc@example.com"}},
@@ -436,9 +425,8 @@ class TestRunWorkflow:
         ]
         tool.pd_client.list_all.return_value = []  # no DRGN in notes either
 
-        with pytest.raises(SystemExit) as exc_info:
+        with pytest.raises(RuntimeError, match="No DRGN ticket linked"):
             tool.run("ABC123", "DSSD-29386")
-        assert exc_info.value.code == 1
 
     def test_dry_run_no_mutations(self):
         tool = _make_tool(dry_run=True)

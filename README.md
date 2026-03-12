@@ -462,6 +462,12 @@ noc-toolkit/
 
 ## 🔄 Version History
 
+### pd-escalate v0.1.1 (2026-03-11)
+
+- ✅ Refactor: moved `JIRA_BASE_URL` from global to instance attribute, removed `PD_BASE_URL` global
+- ✅ Replaced `sys.exit(1)` in `run()` with `RuntimeError` for cleaner error handling
+- ✅ 37 unit tests added (pytest)
+
 ### Version 0.6.0 (2026-03-07)
 
 - ✅ Integrated PD Escalation Tool (pd-escalate v0.1.0)

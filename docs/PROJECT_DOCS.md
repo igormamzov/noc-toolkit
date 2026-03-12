@@ -268,7 +268,7 @@ Designed to run every 10 minutes via cron:
 
 **Location:** `tools/pd-escalate/`
 **Main Script:** `pd_escalate.py`
-**Version:** 0.1.0
+**Version:** 0.1.1
 **Purpose:** Automate the post-DSSD escalation workflow — link DRGN→DSSD, transition DRGN to Escalated, post PD note, print Slack template
 
 **Key Features:**
@@ -546,6 +546,14 @@ Logs are stored in the `logs/` directory (created automatically):
 ---
 
 ## 🔄 Version History
+
+### pd-escalate v0.1.1 (2026-03-11)
+
+**Refactor: eliminate global state, improve error handling:**
+- Moved `JIRA_BASE_URL` from mutable module global to `self.jira_base_url` instance attribute
+- Removed hardcoded `PD_BASE_URL` global constant
+- Replaced `sys.exit(1)` in `run()` with `RuntimeError` — business logic no longer calls `sys.exit`
+- 37 unit tests added (pytest)
 
 ### Version 0.6.0 (2026-03-07)
 

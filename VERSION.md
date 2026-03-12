@@ -30,7 +30,7 @@ All components are currently in **0.x.x** version, indicating active development
 | **pd-jira-tool**           | 0.3.1   | Development   | PagerDuty-Jira integration and sync tool       |
 | **pagerduty-job-extractor**| 0.1.0   | Development   | Extract failed job names from PD incidents     |
 | **pd-merge**               | 0.2.3   | Development   | Find and merge related PD incidents by job name|
-| **pd-escalate**            | 0.1.0   | Development   | Post-DSSD escalation workflow automation       |
+| **pd-escalate**            | 0.1.1   | Development   | Post-DSSD escalation workflow automation       |
 | **data-freshness**         | 0.1.0   | Development   | DACSCAN data freshness report via Databricks SQL|
 | **noc-report-assistant**   | 0.1.5   | Development   | Sync Jira statuses into End-of-Shift Excel report|
 
@@ -81,6 +81,14 @@ print(f"Version: {VERSION}")
 - CLI: `--pd` (incident ID or URL), `--dssd` (required), `--drgn` (optional), `--dry-run`
 - No new dependencies — reuses `pagerduty` + `jira` libs already in requirements.txt
 - Registered as tool #7 in noc-toolkit menu
+
+### pd-escalate v0.1.1 (2026-03-11)
+
+**Refactor: eliminate global state, improve error handling:**
+- Moved `JIRA_BASE_URL` from mutable module global to `self.jira_base_url` instance attribute
+- Removed hardcoded `PD_BASE_URL` global constant
+- Replaced `sys.exit(1)` in `run()` with `RuntimeError` — business logic no longer calls `sys.exit`
+- 37 unit tests added (pytest)
 
 ### pd-escalate v0.1.0 (2026-03-07)
 

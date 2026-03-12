@@ -16,7 +16,7 @@ import warnings
 from typing import Any, Dict, Optional
 
 # Version information
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 # Suppress pagination warnings from pagerduty package
 warnings.filterwarnings('ignore', message='.*lacks a "more" property.*')
@@ -33,12 +33,6 @@ except ImportError as import_error:
 
 # Regex for detecting DRGN tickets in text (fallback)
 DRGN_PATTERN = re.compile(r'\b(DRGN-\d+)\b')
-
-# PagerDuty web UI base URL
-PD_BASE_URL = "https://yourcompany.pagerduty.com/incidents"
-
-# Jira web UI base URL — built from JIRA_SERVER_URL env var at runtime
-JIRA_BASE_URL = None  # set in main() from os.environ['JIRA_SERVER_URL']
 
 # Jira transition ID for "Escalated" status
 ESCALATED_TRANSITION_ID = "51"
@@ -79,6 +73,7 @@ class EscalateTool:
             dry_run: If True, simulate without API mutations
         """
         self.dry_run = dry_run
+        self.jira_base_url = jira_server_url.rstrip("/") + "/browse"
         self.pd_client = pagerduty.RestApiV2Client(pagerduty_api_token)
         self.jira_client = JIRA(
             server=jira_server_url,
@@ -152,7 +147,7 @@ class EscalateTool:
                 'status': incident.get('status', ''),
                 'priority': priority_summary,
                 'incident_number': incident.get('incident_number', ''),
-                'html_url': incident.get('html_url', f'{PD_BASE_URL}/{incident_id}'),
+                'html_url': incident.get('html_url', ''),
                 'alert_count': incident.get('alert_counts', {}).get('all', 0),
                 'drgn_key': drgn_key,
             }
@@ -267,7 +262,7 @@ class EscalateTool:
         """
         note_content = (
             f"Escalated to {dssd_key} - {dssd_info['status']} - {dssd_info['assignee']}\n"
-            f"{JIRA_BASE_URL}/{dssd_key}\n"
+            f"{self.jira_base_url}/{dssd_key}\n"
             f"{drgn_key} linked \"is blocked by\" {dssd_key}, status → Escalated\n"
             f"Notified #cds-ops-24x7-int"
         )
@@ -304,7 +299,7 @@ class EscalateTool:
             incident_title: PD incident title
             error_summary: Brief error description for the blockquote
         """
-        dssd_url = f"{JIRA_BASE_URL}/{dssd_key}"
+        dssd_url = f"{self.jira_base_url}/{dssd_key}"
 
         print("\n" + "=" * 60)
         print("Slack template for #cds-ops-24x7-int:")
@@ -364,11 +359,11 @@ class EscalateTool:
                     print(f"  Found in notes: {drgn_key}")
                 else:
                     pd_url = incident_info['html_url']
-                    print(f"\n  ** No DRGN ticket linked to this incident **")
-                    print(f"  Open PD incident and press 'Create Jira Issue' button:")
-                    print(f"  {pd_url}")
-                    print(f"\n  Then re-run this tool (DRGN will be auto-detected).")
-                    sys.exit(1)
+                    raise RuntimeError(
+                        f"No DRGN ticket linked to incident {incident_id}. "
+                        f"Open PD incident and press 'Create Jira Issue' button: {pd_url} "
+                        f"Then re-run this tool."
+                    )
         else:
             print(f"\n[3/8] Using provided DRGN: {drgn_key}")
 
@@ -466,10 +461,6 @@ def main() -> None:
         print("\nPlease set these in your environment or .env file.", file=sys.stderr)
         print("See .env.example for the required format.", file=sys.stderr)
         sys.exit(1)
-
-    # Set JIRA_BASE_URL from env var
-    global JIRA_BASE_URL
-    JIRA_BASE_URL = jira_server_url.rstrip('/') + "/browse"
 
     # Parse incident ID
     incident_id = extract_incident_id(args.pd)
