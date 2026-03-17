@@ -516,6 +516,11 @@ noc-toolkit/
 - ✅ **Bug fix:** TTM row gets A:F merge instead of A:B after start_shift
 - ✅ **Bug fix:** overlapping merge cells corrupt XLSX (v0.1.6)
 
+### pd-resolver v0.1.1 (2026-03-16)
+
+- ✅ **Bug fix:** Interactive prompt when launched from toolkit menu (no args)
+- ✅ **Bug fix:** Auto-detect AWS profile from `~/.aws/credentials` for MWAA access
+
 ### pd-resolver v0.1.0 (2026-03-16)
 
 - ✅ **New tool:** Auto-resolve PD incidents where Airflow DAG runs recovered

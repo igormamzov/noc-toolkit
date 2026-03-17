@@ -34,7 +34,7 @@ All components are currently in **0.x.x** version, indicating active development
 | **data-freshness**         | 0.1.1   | Development   | DACSCAN data freshness report via Databricks SQL|
 | **noc-report-assistant**   | 0.1.6   | Development   | Sync Jira statuses into shift report (Google Sheets / Excel)|
 | **gsheet_report**          | 0.1.0   | Development   | Google Sheets adapter for NOC Report Assistant   |
-| **pd-resolver**            | 0.1.0   | Development   | Auto-resolve PD incidents where Airflow jobs recovered|
+| **pd-resolver**            | 0.1.1   | Development   | Auto-resolve PD incidents where Airflow jobs recovered|
 
 ---
 
@@ -82,6 +82,14 @@ print(f"Version: {VERSION}")
 **Bug fix: merge cell corruption after start_shift:**
 - TTM row gets A:F merge instead of A:B after start_shift — fixed merge range
 - Overlapping merge cells corrupt XLSX — fixed by proper unmerge before re-merge
+
+### pd-resolver v0.1.1 (2026-03-16)
+
+**Bug fixes: toolkit menu launch + AWS profile auto-detect:**
+- `incident` argument now optional (`nargs='?'`) — prompts interactively when launched from toolkit menu
+- Added `_detect_aws_profile()` — scans `~/.aws/credentials` for profiles with "airflow"/"mwaa" keywords
+- Uses `boto3.Session(profile_name=...)` instead of `boto3.client()` for explicit profile selection
+- Works without `AWS_PROFILE` env var or `aws` CLI installed
 
 ### pd-resolver v0.1.0 (2026-03-16)
 
