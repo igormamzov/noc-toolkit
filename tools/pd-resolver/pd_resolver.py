@@ -427,19 +427,23 @@ class PDResolver:
         return None
 
     @staticmethod
-    def evaluate_recovery(runs: List[AirflowRun]) -> bool:
+    def evaluate_recovery(runs: List[AirflowRun], min_consecutive: int = 2) -> bool:
         """
-        Check if all recent runs are successful (indicating recovery).
+        Check if the most recent runs are successful (indicating recovery).
+
+        Runs must be ordered by start_date descending (newest first).
+        Recovery = the last `min_consecutive` runs are all 'success'.
 
         Args:
-            runs: List of recent AirflowRun objects
+            runs: List of recent AirflowRun objects (newest first)
+            min_consecutive: Minimum consecutive successes required from the latest run
 
         Returns:
-            True if all runs are 'success', False otherwise
+            True if the last min_consecutive runs are 'success', False otherwise
         """
-        if not runs:
+        if len(runs) < min_consecutive:
             return False
-        return all(run.state == 'success' for run in runs)
+        return all(run.state == 'success' for run in runs[:min_consecutive])
 
     # ------------------------------------------------------------------
     # Jira / DRGN methods
@@ -681,9 +685,18 @@ class PDResolver:
             for failed_run in failed_runs[:3]:
                 print(f"  FAILED: {failed_run.dag_run_id} ({failed_run.state}) at {failed_run.start_date}")
 
-        recovered = self.evaluate_recovery(runs)
+        min_consecutive = 2
+        recovered = self.evaluate_recovery(runs, min_consecutive=min_consecutive)
         if not recovered:
-            print(f"\n  NOT recovered -- {total_count - success_count}/{total_count} failures")
+            # Count consecutive successes from the latest run
+            consec = 0
+            for run in runs:
+                if run.state == 'success':
+                    consec += 1
+                else:
+                    break
+            print(f"\n  NOT recovered -- last {consec} consecutive successes "
+                  f"(need {min_consecutive})")
             print("  Cannot auto-resolve. Exiting.")
             return ResolveResult(
                 incident_id=incident_id,
@@ -698,7 +711,7 @@ class PDResolver:
                 drgn_closed=False,
                 pd_resolved=False,
             )
-        print("  Recovery confirmed")
+        print(f"  Recovery confirmed (last {min_consecutive}+ runs succeeded)")
 
         # Step 5: Find DRGN ticket
         drgn_key = incident_info.get('drgn_key')

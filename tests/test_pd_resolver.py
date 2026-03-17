@@ -212,20 +212,48 @@ class TestEvaluateRecovery:
         runs = _make_airflow_runs(15, all_success=True)
         assert PDResolver.evaluate_recovery(runs) is True
 
-    def test_some_failures(self):
-        runs = _make_airflow_runs(15, all_success=False, failed_indices=[0, 3])
+    def test_latest_two_success_with_older_failures(self):
+        """Oldest runs failed but latest 2 succeeded — recovered."""
+        runs = _make_airflow_runs(15, all_success=False, failed_indices=[5, 10])
+        assert PDResolver.evaluate_recovery(runs) is True
+
+    def test_latest_run_failed(self):
+        """Most recent run failed — not recovered."""
+        runs = _make_airflow_runs(15, all_success=False, failed_indices=[0])
+        assert PDResolver.evaluate_recovery(runs) is False
+
+    def test_second_latest_run_failed(self):
+        """Second most recent run failed — not recovered."""
+        runs = _make_airflow_runs(15, all_success=False, failed_indices=[1])
+        assert PDResolver.evaluate_recovery(runs) is False
+
+    def test_both_latest_failed(self):
+        runs = _make_airflow_runs(15, all_success=False, failed_indices=[0, 1])
         assert PDResolver.evaluate_recovery(runs) is False
 
     def test_empty_runs(self):
         assert PDResolver.evaluate_recovery([]) is False
 
-    def test_single_success(self):
+    def test_single_run_not_enough(self):
+        """One successful run is below min_consecutive=2 threshold."""
         runs = _make_airflow_runs(1, all_success=True)
-        assert PDResolver.evaluate_recovery(runs) is True
+        assert PDResolver.evaluate_recovery(runs) is False
 
     def test_single_failure(self):
         runs = _make_airflow_runs(1, all_success=False, failed_indices=[0])
         assert PDResolver.evaluate_recovery(runs) is False
+
+    def test_exactly_two_successes(self):
+        """Exactly 2 successful runs — meets the threshold."""
+        runs = _make_airflow_runs(2, all_success=True)
+        assert PDResolver.evaluate_recovery(runs) is True
+
+    def test_custom_min_consecutive(self):
+        """Custom min_consecutive=3 requires 3 latest successes."""
+        runs = _make_airflow_runs(5, all_success=False, failed_indices=[3])
+        assert PDResolver.evaluate_recovery(runs, min_consecutive=3) is True
+        runs_bad = _make_airflow_runs(5, all_success=False, failed_indices=[2])
+        assert PDResolver.evaluate_recovery(runs_bad, min_consecutive=3) is False
 
 
 # ===========================================================================
