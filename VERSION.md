@@ -32,7 +32,9 @@ All components are currently in **0.x.x** version, indicating active development
 | **pd-merge**               | 0.2.4   | Development   | Find and merge related PD incidents by job name|
 | **pd-escalate**            | 0.1.1   | Development   | Post-DSSD escalation workflow automation       |
 | **data-freshness**         | 0.1.1   | Development   | DACSCAN data freshness report via Databricks SQL|
-| **noc-report-assistant**   | 0.1.5   | Development   | Sync Jira statuses into End-of-Shift Excel report|
+| **noc-report-assistant**   | 0.1.6   | Development   | Sync Jira statuses into shift report (Google Sheets / Excel)|
+| **gsheet_report**          | 0.1.0   | Development   | Google Sheets adapter for NOC Report Assistant   |
+| **pd-resolver**            | 0.1.0   | Development   | Auto-resolve PD incidents where Airflow jobs recovered|
 
 ---
 
@@ -64,6 +66,34 @@ print(f"Version: {VERSION}")
 ---
 
 ## Version History
+
+### gsheet_report v0.1.0 (2026-03-16)
+
+**New — Google Sheets adapter for NOC Report Assistant:**
+- Apps Script Web App as API proxy for direct Google Sheets access
+- Three operations: sync statuses, add row, start shift — same as Excel mode
+- Sub-menu in toolkit: Online (Google Sheets) / Local (Excel) mode selection
+- API key authentication via Script Properties
+- `GSheetClient` and `JiraClient` classes with urllib HTTP
+- 57 unit tests added (pytest)
+
+### noc-report-assistant v0.1.6 (2026-03-13)
+
+**Bug fix: merge cell corruption after start_shift:**
+- TTM row gets A:F merge instead of A:B after start_shift — fixed merge range
+- Overlapping merge cells corrupt XLSX — fixed by proper unmerge before re-merge
+
+### pd-resolver v0.1.0 (2026-03-16)
+
+**Initial release — auto-resolve recovered Airflow incidents:**
+- `PDResolver` class with 7-step workflow: fetch PD incident → extract DAG name → check Airflow runs → find DRGN → search Confluence runbook → close DRGN → resolve PD
+- Airflow REST API integration via AWS MWAA web login token
+- DRGN Close transition with proper field IDs (Resolution, Root Cause, SLA Violation, Comment)
+- Confluence runbook search via DS space
+- Interactive prompts for SLA violation and comment
+- Dry-run mode for safe testing
+- 87 unit tests added (pytest)
+- Registered as tool #8 in noc-toolkit menu
 
 ### pd-monitor v0.1.4 (2026-03-12)
 
@@ -379,5 +409,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-03-12
+**Last Updated:** 2026-03-16
 **Maintained by:** NOC Team

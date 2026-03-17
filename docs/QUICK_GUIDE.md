@@ -76,14 +76,17 @@ Daily DACSCAN freshness report via Databricks SQL.
 
 ## 6. NOC Report Assistant
 
-Sync Jira statuses into End-of-Shift Excel report.
+Sync Jira statuses into shift report (Google Sheets or Excel).
 
+- **Online mode (Google Sheets)** [recommended] — reads/writes directly in Google Sheets via Apps Script
+- **Local mode (Excel)** — works with downloaded `.xlsx` file (legacy)
+- **Start shift** — copy tickets from previous shift, update date, sync Jira statuses
 - **Sync statuses** — updates Jira status (column E) for all existing tickets
 - **Add row** — inserts new ticket to "Things to monitor" with Jira + Slack links
 - Works with Night-Shift-NEW and Day-Shift-NEW sheets
-- Preserves all Excel formatting, merges, hyperlinks
 
-**Flags:** `--dry-run` | `--file PATH` (default: `~/Downloads/NOC endshift report.xlsx`)
+**Online mode flags:** `--dry-run` | `--verbose`
+**Local mode flags:** `--dry-run` | `--file PATH` (default: `~/Downloads/NOC endshift report.xlsx`)
 
 ---
 
@@ -101,18 +104,37 @@ Automate post-DSSD escalation workflow.
 
 ---
 
+## 8. PD Resolver
+
+Auto-resolve PD incidents where Airflow DAG runs recovered.
+
+- Extracts DAG name from PD incident title
+- Checks Airflow REST API (via AWS MWAA) for recent successful runs
+- Finds DRGN ticket from PD notes, searches Confluence for runbook
+- Interactive prompts for SLA violation and comment
+- Closes DRGN ticket and resolves PD incident with summary note
+
+**Flags:** `--dry-run` | `--verbose`
+
+---
+
 ## Environment Variables
 
 All tools share a single `.env` file in the toolkit root:
 
 | Variable | Used by | Description |
 |----------|---------|-------------|
-| `PAGERDUTY_API_TOKEN` | 1, 2, 3, 4, 7 | PagerDuty API token (write access) |
-| `JIRA_SERVER_URL` | 1, 4, 6, 7 | Jira server URL |
-| `JIRA_PERSONAL_ACCESS_TOKEN` | 1, 4, 6, 7 | Jira PAT (Bearer auth) |
+| `PAGERDUTY_API_TOKEN` | 1, 2, 3, 4, 7, 8 | PagerDuty API token (write access) |
+| `JIRA_SERVER_URL` | 1, 4, 6, 7, 8 | Jira server URL |
+| `JIRA_PERSONAL_ACCESS_TOKEN` | 1, 4, 6, 7, 8 | Jira PAT (Bearer auth) |
 | `DATABRICKS_HOST` | 5 | Databricks workspace URL |
 | `DATABRICKS_TOKEN` | 5 | Databricks access token |
 | `DATABRICKS_WAREHOUSE_ID` | 5 | SQL warehouse ID |
+| `GSHEET_WEBAPP_URL` | 6 | Apps Script Web App URL (Online mode) |
+| `GSHEET_API_KEY` | 6 | API key for Apps Script (Online mode) |
+| `AWS_PROFILE` | 8 | AWS profile with MWAA access |
+| `MWAA_ENVIRONMENT_NAME` | 8 | Airflow environment name |
+| `MWAA_REGION` | 8 | AWS region for MWAA |
 
 ---
 

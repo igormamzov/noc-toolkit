@@ -76,14 +76,17 @@
 
 ## 6. NOC Report Assistant
 
-Синхронизация Jira статусов в End-of-Shift Excel отчёт.
+Синхронизация Jira статусов в шифт-репорт (Google Sheets или Excel).
 
+- **Онлайн режим (Google Sheets)** [рекомендуемый] — читает/пишет напрямую в Google Sheets через Apps Script
+- **Локальный режим (Excel)** — работает с загруженным `.xlsx` файлом (легаси)
+- **Start shift** — копирует тикеты из предыдущей смены, обновляет дату, синкает Jira статусы
 - **Sync statuses** — обновляет Jira статус (столбец E) для всех существующих тикетов
 - **Add row** — вставляет новый тикет в секцию "Things to monitor" с Jira + Slack ссылками
 - Работает с листами Night-Shift-NEW и Day-Shift-NEW
-- Сохраняет всё форматирование Excel, объединения ячеек, гиперссылки
 
-**Флаги:** `--dry-run` | `--file PATH` (по умолчанию: `~/Downloads/NOC endshift report.xlsx`)
+**Онлайн флаги:** `--dry-run` | `--verbose`
+**Локальные флаги:** `--dry-run` | `--file PATH` (по умолчанию: `~/Downloads/NOC endshift report.xlsx`)
 
 ---
 
@@ -101,18 +104,37 @@
 
 ---
 
+## 8. PD Resolver
+
+Авто-резолв PD инцидентов где Airflow DAG раны восстановились.
+
+- Извлекает имя DAG из названия PD инцидента
+- Проверяет Airflow REST API (через AWS MWAA) на наличие успешных ранов
+- Находит DRGN тикет из PD заметок, ищет ранбук в Confluence
+- Интерактивные запросы: SLA Violation, Comment
+- Закрывает DRGN тикет и резолвит PD инцидент с итоговой заметкой
+
+**Флаги:** `--dry-run` | `--verbose`
+
+---
+
 ## Переменные окружения
 
 Все инструменты используют общий файл `.env` в корне toolkit:
 
 | Переменная | Используется | Описание |
 |------------|--------------|----------|
-| `PAGERDUTY_API_TOKEN` | 1, 2, 3, 4, 7 | PagerDuty API токен (с правами записи) |
-| `JIRA_SERVER_URL` | 1, 4, 6, 7 | URL Jira сервера |
-| `JIRA_PERSONAL_ACCESS_TOKEN` | 1, 4, 6, 7 | Jira PAT (Bearer авторизация) |
+| `PAGERDUTY_API_TOKEN` | 1, 2, 3, 4, 7, 8 | PagerDuty API токен (с правами записи) |
+| `JIRA_SERVER_URL` | 1, 4, 6, 7, 8 | URL Jira сервера |
+| `JIRA_PERSONAL_ACCESS_TOKEN` | 1, 4, 6, 7, 8 | Jira PAT (Bearer авторизация) |
 | `DATABRICKS_HOST` | 5 | URL Databricks workspace |
 | `DATABRICKS_TOKEN` | 5 | Databricks access token |
 | `DATABRICKS_WAREHOUSE_ID` | 5 | ID SQL warehouse |
+| `GSHEET_WEBAPP_URL` | 6 | URL Apps Script Web App (Онлайн режим) |
+| `GSHEET_API_KEY` | 6 | API ключ для Apps Script (Онлайн режим) |
+| `AWS_PROFILE` | 8 | AWS профиль с доступом к MWAA |
+| `MWAA_ENVIRONMENT_NAME` | 8 | Имя Airflow окружения |
+| `MWAA_REGION` | 8 | AWS регион для MWAA |
 
 ---
 

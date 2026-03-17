@@ -21,8 +21,9 @@ NOC Toolkit is a menu-driven command-line interface that provides easy access to
   - **PagerDuty Monitor** - Monitor and auto-acknowledge triggered incidents
   - **PagerDuty Incident Merge** - Find and merge related incidents by job name
   - **Data Freshness Checker** - DACSCAN data freshness report via Databricks SQL
-  - **NOC Report Assistant** - Sync Jira statuses into End-of-Shift Excel report
+  - **NOC Report Assistant** - Sync Jira statuses into shift report (Google Sheets / Excel)
   - **PD Escalation Tool** - Automate post-DSSD escalation workflow (link DRGN→DSSD, transition, PD note, Slack template)
+  - **PD Resolver** - Auto-resolve PD incidents where Airflow DAG runs recovered
 - 🚀 **Extensible** - Easy to add new tools
 - ✅ **Health Checks** - Automatically verifies tool availability
 
@@ -107,16 +108,19 @@ Available Tools:
       DACSCAN data freshness report with granular table checks
 
   6. [✓] NOC Report Assistant
-      Sync Jira statuses into End-of-Shift Excel report
+      Sync Jira statuses into shift report (Google Sheets / Excel)
 
   7. [✓] PD Escalation Tool
       Link DRGN→DSSD, transition to Escalated, post PD note
+
+  8. [✓] PD Resolver
+      Auto-resolve PD incidents where Airflow jobs recovered
 
 --------------------------------------------------------
   0. Exit
 ========================================================
 
-Select tool [0-7]:
+Select tool [0-8]:
 ```
 
 ### Menu Navigation
@@ -271,7 +275,13 @@ python3 tools/data-freshness/data_freshness.py --report      # Run + HTML report
 
 ### 6. NOC Report Assistant
 
-**Purpose:** Automate shift handoff, sync Jira statuses, and add ticket rows to the End-of-Shift Excel report
+**Purpose:** Automate shift handoff, sync Jira statuses, and add ticket rows to the shift report
+
+**Modes:**
+- **Online mode (Google Sheets)** [recommended] — reads/writes the shift report directly in Google Sheets via Apps Script Web App. No file downloads needed.
+- **Local mode (Excel)** — works with a downloaded `.xlsx` file (legacy)
+
+When Google Sheets is configured (`GSHEET_WEBAPP_URL` + `GSHEET_API_KEY`), the toolkit shows a sub-menu to choose Online or Local mode. If not configured, it shows setup instructions.
 
 **Features:**
 - **Start shift** — copy all tickets from previous shift, update date, sync Jira statuses
@@ -281,21 +291,21 @@ python3 tools/data-freshness/data_freshness.py --report      # Run + HTML report
 - Handles insert/delete rows when ticket count differs between shifts
 - Month boundary handling (e.g. Mar 31 → Apr 1)
 - Auto-detects Jira and Slack links in any paste order
-- Preserves all Excel formatting, merges, and hyperlinks
+- Preserves all Excel formatting, merges, and hyperlinks (Local mode)
 - Works with both Night-Shift-NEW and Day-Shift-NEW sheets
 
-**Configuration:** Uses `.env` from toolkit root (JIRA_SERVER_URL, JIRA_PERSONAL_ACCESS_TOKEN)
+**Configuration:** Uses `.env` from toolkit root:
+- `JIRA_SERVER_URL`, `JIRA_PERSONAL_ACCESS_TOKEN` (required for both modes)
+- `GSHEET_WEBAPP_URL`, `GSHEET_API_KEY` (required for Online mode — request from toolkit maintainer)
 
-**Quick setup:**
-```bash
-python3 tools/noc-report-assistant/noc_report_assistant.py --dry-run    # Preview
-python3 tools/noc-report-assistant/noc_report_assistant.py               # Live run
-```
-
-**CLI options:**
+**CLI options (Local mode):**
 - `--dry-run, -n` — Show changes without saving
 - `--verbose, -v` — Show API call details
 - `--file PATH` — Custom Excel file path (default: `~/Downloads/NOC endshift report.xlsx`)
+
+**CLI options (Online mode):**
+- `--dry-run, -n` — Show changes without saving
+- `--verbose, -v` — Show API call details
 
 ---
 
@@ -326,6 +336,36 @@ python3 tools/pd-escalate/pd_escalate.py --pd Q33L5GALLQ3ESB --dssd DSSD-29386  
 - `--dssd` — DSSD ticket key, e.g. DSSD-29386 (required)
 - `--drgn` — DRGN ticket key (optional, auto-detected)
 - `--dry-run, -n` — Simulate without API mutations
+
+---
+
+### 8. PD Resolver
+
+**Purpose:** Auto-resolve PagerDuty incidents where Airflow DAG runs have recovered (subsequent runs succeeded)
+
+**Features:**
+- Extracts DAG name from PD incident title
+- Checks Airflow REST API (via AWS MWAA) for recent successful runs
+- Finds DRGN ticket from PD notes
+- Searches Confluence DS space for runbook
+- Interactive prompts for SLA violation and comment
+- Closes DRGN ticket with proper transition fields
+- Resolves PD incident with summary note
+
+**Configuration:** Uses shared `.env` from toolkit root (PAGERDUTY_API_TOKEN + Jira credentials) plus optional AWS/MWAA settings:
+- `AWS_PROFILE` — AWS profile with MWAA access
+- `MWAA_ENVIRONMENT_NAME` — Airflow environment name
+- `MWAA_REGION` — AWS region
+
+**Quick setup:**
+```bash
+python3 tools/pd-resolver/pd_resolver.py --dry-run    # Preview
+python3 tools/pd-resolver/pd_resolver.py               # Live run
+```
+
+**CLI options:**
+- `--dry-run, -n` — Simulate without API mutations
+- `--verbose, -v` — Show extra debug output
 
 ---
 
@@ -448,8 +488,9 @@ noc-toolkit/
 │   ├── pd-monitor/            # Auto-acknowledge monitor
 │   ├── pd-merge/              # Incident merge tool
 │   ├── data-freshness/        # DACSCAN freshness report
-│   ├── noc-report-assistant/  # End-of-Shift Excel report tool
-│   └── pd-escalate/           # Post-DSSD escalation workflow
+│   ├── noc-report-assistant/  # Shift report tool (Google Sheets / Excel)
+│   ├── pd-escalate/           # Post-DSSD escalation workflow
+│   └── pd-resolver/           # Auto-resolve recovered Airflow incidents
 ├── config/                     # Configuration files
 ├── docs/                       # Documentation
 │   ├── PROJECT_DOCS.md        # Architecture docs
@@ -461,6 +502,29 @@ noc-toolkit/
 ---
 
 ## 🔄 Version History
+
+### gsheet_report v0.1.0 (2026-03-16)
+
+- ✅ **New:** Google Sheets adapter for NOC Report Assistant via Apps Script Web App
+- ✅ Three operations: sync statuses, add row, start shift — same as Excel mode
+- ✅ Sub-menu in toolkit: Online (Google Sheets) / Local (Excel) mode selection
+- ✅ API key authentication for Apps Script endpoint
+- ✅ 57 unit tests added (pytest)
+
+### noc-report-assistant v0.1.6 (2026-03-13)
+
+- ✅ **Bug fix:** TTM row gets A:F merge instead of A:B after start_shift
+- ✅ **Bug fix:** overlapping merge cells corrupt XLSX (v0.1.6)
+
+### pd-resolver v0.1.0 (2026-03-16)
+
+- ✅ **New tool:** Auto-resolve PD incidents where Airflow DAG runs recovered
+- ✅ Airflow REST API integration via AWS MWAA web login token
+- ✅ DRGN Close transition with proper field IDs
+- ✅ Confluence runbook search via DS space
+- ✅ Interactive SLA violation and comment prompts
+- ✅ 87 unit tests added (pytest)
+- ✅ Registered as tool #8 in noc-toolkit menu
 
 ### pd-monitor v0.1.4 (2026-03-12)
 
