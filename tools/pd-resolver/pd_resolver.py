@@ -138,6 +138,7 @@ class PDResolver:
         jira_email: str,
         mwaa_env_name: str = "prd2612-prod-airflow",
         mwaa_region: str = "us-west-2",
+        aws_profile: Optional[str] = None,
         dry_run: bool = False,
         verbose: bool = False,
         no_confirm: bool = False,
@@ -152,6 +153,7 @@ class PDResolver:
             jira_email: Email for PD 'From' header
             mwaa_env_name: MWAA environment name
             mwaa_region: AWS region for MWAA
+            aws_profile: AWS profile name (auto-detected if None)
             dry_run: If True, simulate without API mutations
             verbose: If True, print detailed output
             no_confirm: If True, skip interactive confirmation before mutations
@@ -163,6 +165,7 @@ class PDResolver:
         self.jira_server_url = jira_server_url.rstrip("/")
         self.mwaa_env_name = mwaa_env_name
         self.mwaa_region = mwaa_region
+        self.aws_profile = aws_profile or self._detect_aws_profile()
 
         self.pd_client = pagerduty.RestApiV2Client(pagerduty_api_token)
         self.jira_client = JIRA(
@@ -285,6 +288,28 @@ class PDResolver:
             ) from error
 
     # ------------------------------------------------------------------
+    # AWS helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _detect_aws_profile() -> Optional[str]:
+        """Auto-detect AWS profile with Airflow access from ~/.aws/credentials."""
+        credentials_path = os.path.expanduser('~/.aws/credentials')
+        if not os.path.exists(credentials_path):
+            return None
+        try:
+            import configparser
+            config = configparser.ConfigParser()
+            config.read(credentials_path)
+            for section in config.sections():
+                lower_section = section.lower()
+                if 'airflow' in lower_section or 'mwaa' in lower_section:
+                    return section
+        except Exception:
+            pass
+        return None
+
+    # ------------------------------------------------------------------
     # Airflow methods
     # ------------------------------------------------------------------
 
@@ -299,7 +324,11 @@ class PDResolver:
             RuntimeError: If unable to create session
         """
         try:
-            client = boto3.client('mwaa', region_name=self.mwaa_region)
+            session_kwargs: Dict[str, Any] = {'region_name': self.mwaa_region}
+            if self.aws_profile:
+                session_kwargs['profile_name'] = self.aws_profile
+            boto_session = boto3.Session(**session_kwargs)
+            client = boto_session.client('mwaa', region_name=self.mwaa_region)
             web_token = client.create_web_login_token(Name=self.mwaa_env_name)
             session = requests.Session()
             login_response = session.post(
@@ -889,6 +918,7 @@ def main() -> None:
     # MWAA config from env or defaults
     mwaa_env_name = os.environ.get('MWAA_ENVIRONMENT_NAME', 'prd2612-prod-airflow')
     mwaa_region = os.environ.get('MWAA_REGION', 'us-west-2')
+    aws_profile = os.environ.get('AWS_PROFILE')
 
     try:
         resolver = PDResolver(
@@ -898,6 +928,7 @@ def main() -> None:
             jira_email=jira_email,
             mwaa_env_name=mwaa_env_name,
             mwaa_region=mwaa_region,
+            aws_profile=aws_profile,
             dry_run=args.dry_run,
             verbose=args.verbose,
             no_confirm=args.no_confirm,

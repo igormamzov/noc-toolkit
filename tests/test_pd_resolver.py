@@ -354,13 +354,15 @@ class TestGetAirflowSession:
 
     def test_creates_session(self):
         resolver = _make_resolver()
-        mock_boto_client = MagicMock()
-        mock_boto_client.create_web_login_token.return_value = {
+        mock_mwaa_client = MagicMock()
+        mock_mwaa_client.create_web_login_token.return_value = {
             "WebToken": "fake-token",
             "WebServerHostname": MWAA_VPCE,
         }
+        mock_boto_session = MagicMock()
+        mock_boto_session.client.return_value = mock_mwaa_client
 
-        with patch("pd_resolver.boto3.client", return_value=mock_boto_client), \
+        with patch("pd_resolver.boto3.Session", return_value=mock_boto_session), \
              patch("pd_resolver.requests.Session") as mock_session_cls:
             mock_session = MagicMock()
             mock_session.post.return_value = MagicMock(status_code=200)
@@ -369,7 +371,7 @@ class TestGetAirflowSession:
 
             session = resolver.get_airflow_session()
 
-            mock_boto_client.create_web_login_token.assert_called_once_with(
+            mock_mwaa_client.create_web_login_token.assert_called_once_with(
                 Name="prd2612-prod-airflow",
             )
             mock_session.post.assert_called_once()
@@ -377,7 +379,7 @@ class TestGetAirflowSession:
 
     def test_boto_error_raises(self):
         resolver = _make_resolver()
-        with patch("pd_resolver.boto3.client", side_effect=Exception("no creds")):
+        with patch("pd_resolver.boto3.Session", side_effect=Exception("no creds")):
             with pytest.raises(RuntimeError, match="Failed to create Airflow session"):
                 resolver.get_airflow_session()
 
