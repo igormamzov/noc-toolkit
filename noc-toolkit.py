@@ -707,7 +707,7 @@ class NOCToolkit:
                 self._run_pd_monitor_menu(selected_tool)
                 continue  # Sub-menu handles its own prompts
 
-            # Route noc-report-assistant through Online/Local sub-menu
+            # Route shift-report through Online/Local sub-menu
             if selected_tool.tool_id == "shift-report":
                 self._run_shift_report_menu(selected_tool)
                 continue

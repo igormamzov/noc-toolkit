@@ -228,6 +228,9 @@ function _doAddRow(ws, data) {
     ws.getRange(targetRow, 6).setRichTextValue(richF);
   }
 
+  // Set text wrap on the new row (C:F)
+  ws.getRange(targetRow, 3, 1, 4).setWrap(true);
+
   SpreadsheetApp.flush();
   return { ok: true, insertedRow: targetRow };
 }
@@ -320,7 +323,24 @@ function _doStartShift(ss, targetSheetName) {
     }
   }
 
-  // 8. Clear TTM section (keep one empty row)
+  // 8. Format "from previous shifts" section
+  var fpStart = newLayout.fromPrevRow;
+  var fpCount = sourceTickets.length;
+  if (fpCount > 0) {
+    // Merge A:B across ticket rows and set section label
+    var labelRange = targetWs.getRange(fpStart, 1, fpCount, 2);
+    labelRange.breakApart();
+    labelRange.merge();
+    labelRange.setValue("Things to Monitor\nfrom the previous shifts");
+    labelRange.setVerticalAlignment("middle");
+    labelRange.setWrap(true);
+
+    // Set text wrap on ticket data (C:F) so long text is not clipped
+    var dataRange = targetWs.getRange(fpStart, 3, fpCount, 4);
+    dataRange.setWrap(true);
+  }
+
+  // 9. Clear TTM section (keep one empty row)
   var ttmRow = newLayout.ttmRow;
   var ttmEnd = newLayout.ttmEnd;
   var extraTtm = ttmEnd - ttmRow;
