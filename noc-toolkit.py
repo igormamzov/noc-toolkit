@@ -328,7 +328,7 @@ class NOCToolkit:
             ToolDefinition(
                 tool_id="noc-report-assistant",
                 name="NOC Report Assistant",
-                description="Sync Jira statuses into End-of-Shift Excel report",
+                description="Sync Jira statuses into shift report (Google Sheets / Excel)",
                 script_path="tools/noc-report-assistant/noc_report_assistant.py",
                 enabled=True
             ),
@@ -337,6 +337,13 @@ class NOCToolkit:
                 name="PD Escalation Tool",
                 description="Link DRGN→DSSD, transition to Escalated, post PD note",
                 script_path="tools/pd-escalate/pd_escalate.py",
+                enabled=True
+            ),
+            ToolDefinition(
+                tool_id="pd-resolver",
+                name="PD Resolver",
+                description="Auto-resolve PD incidents where Airflow jobs recovered",
+                script_path="tools/pd-resolver/pd_resolver.py",
                 enabled=True
             ),
         ]
@@ -581,6 +588,67 @@ class NOCToolkit:
 
         return 0
 
+    def _run_noc_report_menu(self, tool: ToolDefinition) -> int:
+        """Show NOC Report Assistant sub-menu: Online (Google Sheets) or Local (Excel).
+
+        Returns exit code from the selected mode.
+        """
+        gsheet_configured = bool(
+            os.environ.get("GSHEET_WEBAPP_URL", "").strip()
+            and os.environ.get("GSHEET_API_KEY", "").strip()
+        )
+
+        print(f"\n{'=' * 56}")
+        print("NOC Report Assistant")
+        print(f"{'=' * 56}")
+
+        if gsheet_configured:
+            print("  1. Online mode  (Google Sheets)  [recommended]")
+            print("  2. Local mode   (Excel file)")
+            print("  0. Back to main menu")
+            print(f"{'=' * 56}")
+
+            try:
+                choice = input("\nSelect option [0-2]: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                return 0
+
+            if choice == '1':
+                gsheet_tool = ToolDefinition(
+                    tool_id="noc-report-gsheet",
+                    name="NOC Report Assistant (Google Sheets)",
+                    description="",
+                    script_path="tools/noc-report-assistant/gsheet_report.py",
+                )
+                return self.run_tool(gsheet_tool)
+            elif choice == '2':
+                return self.run_tool(tool)
+            else:
+                return 0
+        else:
+            print()
+            print("  Google Sheets mode is not configured.")
+            print()
+            print("  To enable it, add these variables to your .env file:")
+            print("    GSHEET_WEBAPP_URL=<web app URL>")
+            print("    GSHEET_API_KEY=<api key>")
+            print()
+            print("  Request these values from the toolkit maintainer.")
+            print()
+            print("  1. Local mode   (Excel file)")
+            print("  0. Back to main menu")
+            print(f"{'=' * 56}")
+
+            try:
+                choice = input("\nSelect option [0-1]: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                return 0
+
+            if choice == '1':
+                return self.run_tool(tool)
+            else:
+                return 0
+
     def _view_monitor_output(self) -> int:
         """Display buffered pd-monitor output."""
         print(f"\n{'=' * 56}")
@@ -638,6 +706,11 @@ class NOCToolkit:
             if selected_tool.tool_id == "pd-monitor":
                 self._run_pd_monitor_menu(selected_tool)
                 continue  # Sub-menu handles its own prompts
+
+            # Route noc-report-assistant through Online/Local sub-menu
+            if selected_tool.tool_id == "noc-report-assistant":
+                self._run_noc_report_menu(selected_tool)
+                continue
 
             # Run the tool
             exit_code = self.run_tool(selected_tool)

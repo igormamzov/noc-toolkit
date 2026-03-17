@@ -14,6 +14,7 @@ sys.path.insert(0, str(TOOLS_DIR / "pd-merge"))
 sys.path.insert(0, str(TOOLS_DIR / "pagerduty-job-extractor"))
 sys.path.insert(0, str(TOOLS_DIR / "pd-jira-tool"))
 sys.path.insert(0, str(TOOLS_DIR / "pd-monitor"))
+sys.path.insert(0, str(TOOLS_DIR / "pd-resolver"))
 
 
 # ---------------------------------------------------------------------------
