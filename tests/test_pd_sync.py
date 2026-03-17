@@ -1,4 +1,4 @@
-"""Tests for pd-jira-tool (pagerduty_jira_tool.py)."""
+"""Tests for pd-jira-tool (pd_sync.py)."""
 
 import os
 import sys
@@ -7,20 +7,20 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
-from pagerduty_jira_tool import PagerDutyJiraTool, _parse_iso_dt, save_summary_to_file
+from pd_sync import PDSync, _parse_iso_dt, save_summary_to_file
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_tool(quiet_mode: bool = False) -> PagerDutyJiraTool:
+def _make_tool(quiet_mode: bool = False) -> PDSync:
     """Create tool with mocked PagerDuty and Jira clients."""
-    with patch("pagerduty_jira_tool.pagerduty") as mock_pd, \
-         patch("pagerduty_jira_tool.JIRA") as mock_jira:
+    with patch("pd_sync.pagerduty") as mock_pd, \
+         patch("pd_sync.JIRA") as mock_jira:
         mock_pd.RestApiV2Client.return_value = MagicMock()
         mock_jira.return_value = MagicMock()
-        tool = PagerDutyJiraTool(
+        tool = PDSync(
             pagerduty_api_token="test-pd-token",
             jira_server_url="https://jira.example.com",
             jira_personal_access_token="test-jira-pat",
@@ -76,26 +76,26 @@ class TestParseIsoDt:
 class TestIsAssignedToUser:
     def test_assigned(self):
         inc = _make_incident(assignments=[{"assignee": {"id": "U1"}}])
-        assert PagerDutyJiraTool._is_assigned_to_user(inc, "U1") is True
+        assert PDSync._is_assigned_to_user(inc, "U1") is True
 
     def test_not_assigned(self):
         inc = _make_incident(assignments=[{"assignee": {"id": "U2"}}])
-        assert PagerDutyJiraTool._is_assigned_to_user(inc, "U1") is False
+        assert PDSync._is_assigned_to_user(inc, "U1") is False
 
     def test_no_assignments(self):
         inc = _make_incident(assignments=[])
-        assert PagerDutyJiraTool._is_assigned_to_user(inc, "U1") is False
+        assert PDSync._is_assigned_to_user(inc, "U1") is False
 
     def test_multiple_assignees(self):
         inc = _make_incident(assignments=[
             {"assignee": {"id": "U2"}},
             {"assignee": {"id": "U1"}},
         ])
-        assert PagerDutyJiraTool._is_assigned_to_user(inc, "U1") is True
+        assert PDSync._is_assigned_to_user(inc, "U1") is True
 
     def test_missing_assignee_key(self):
         inc = _make_incident(assignments=[{}])
-        assert PagerDutyJiraTool._is_assigned_to_user(inc, "U1") is False
+        assert PDSync._is_assigned_to_user(inc, "U1") is False
 
 
 # ===========================================================================
@@ -110,11 +110,11 @@ class TestInit:
 
     def test_cloud_auth(self):
         """Email + API token auth creates tool without error."""
-        with patch("pagerduty_jira_tool.pagerduty") as mock_pd, \
-             patch("pagerduty_jira_tool.JIRA") as mock_jira:
+        with patch("pd_sync.pagerduty") as mock_pd, \
+             patch("pd_sync.JIRA") as mock_jira:
             mock_pd.RestApiV2Client.return_value = MagicMock()
             mock_jira.return_value = MagicMock()
-            tool = PagerDutyJiraTool(
+            tool = PDSync(
                 pagerduty_api_token="tok",
                 jira_server_url="https://jira.example.com",
                 jira_email="user@example.com",
@@ -124,10 +124,10 @@ class TestInit:
 
     def test_missing_credentials_raises(self):
         """No Jira creds raises ValueError."""
-        with patch("pagerduty_jira_tool.pagerduty") as mock_pd:
+        with patch("pd_sync.pagerduty") as mock_pd:
             mock_pd.RestApiV2Client.return_value = MagicMock()
             with pytest.raises(ValueError, match="Invalid Jira credentials"):
-                PagerDutyJiraTool(
+                PDSync(
                     pagerduty_api_token="tok",
                     jira_server_url="https://jira.example.com",
                 )
@@ -818,7 +818,7 @@ class TestJiraTicketPattern:
 # ===========================================================================
 
 class TestMain:
-    @patch("pagerduty_jira_tool.PagerDutyJiraTool")
+    @patch("pd_sync.PDSync")
     @patch.dict("os.environ", {
         "PAGERDUTY_API_TOKEN": "tok",
         "JIRA_SERVER_URL": "https://jira.example.com",
@@ -831,12 +831,12 @@ class TestMain:
         mock_cls.return_value = mock_instance
 
         with patch("sys.argv", ["prog", "--check"]):
-            from pagerduty_jira_tool import main
+            from pd_sync import main
             main()
 
         mock_instance.check_incidents.assert_called_once()
 
-    @patch("pagerduty_jira_tool.PagerDutyJiraTool")
+    @patch("pd_sync.PDSync")
     @patch.dict("os.environ", {
         "PAGERDUTY_API_TOKEN": "tok",
         "JIRA_SERVER_URL": "https://jira.example.com",
@@ -849,7 +849,7 @@ class TestMain:
         mock_cls.return_value = mock_instance
 
         with patch("sys.argv", ["prog", "--snooze", "4"]):
-            from pagerduty_jira_tool import main
+            from pd_sync import main
             main()
 
         call_kwargs = mock_instance.process_and_update_incidents.call_args
@@ -859,8 +859,8 @@ class TestMain:
     @patch.dict("os.environ", {}, clear=True)
     def test_missing_pd_token_exits(self):
         with patch("sys.argv", ["prog", "--check"]):
-            with patch("pagerduty_jira_tool.load_dotenv"):
-                from pagerduty_jira_tool import main
+            with patch("pd_sync.load_dotenv"):
+                from pd_sync import main
                 with pytest.raises(SystemExit) as exc_info:
                     main()
                 assert exc_info.value.code == 1
@@ -870,8 +870,8 @@ class TestMain:
     }, clear=True)
     def test_missing_jira_url_exits(self):
         with patch("sys.argv", ["prog", "--check"]):
-            with patch("pagerduty_jira_tool.load_dotenv"):
-                from pagerduty_jira_tool import main
+            with patch("pd_sync.load_dotenv"):
+                from pd_sync import main
                 with pytest.raises(SystemExit) as exc_info:
                     main()
                 assert exc_info.value.code == 1
@@ -882,8 +882,8 @@ class TestMain:
     }, clear=True)
     def test_missing_jira_creds_exits(self):
         with patch("sys.argv", ["prog", "--check"]):
-            with patch("pagerduty_jira_tool.load_dotenv"):
-                from pagerduty_jira_tool import main
+            with patch("pd_sync.load_dotenv"):
+                from pd_sync import main
                 with pytest.raises(SystemExit) as exc_info:
                     main()
                 assert exc_info.value.code == 1
@@ -895,7 +895,7 @@ class TestMain:
     })
     def test_help_exits_zero(self):
         with patch("sys.argv", ["prog", "--help"]):
-            from pagerduty_jira_tool import main
+            from pd_sync import main
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 0
@@ -907,12 +907,12 @@ class TestMain:
     })
     def test_unknown_arg_exits(self):
         with patch("sys.argv", ["prog", "--bogus"]):
-            from pagerduty_jira_tool import main
+            from pd_sync import main
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
 
-    @patch("pagerduty_jira_tool.PagerDutyJiraTool")
+    @patch("pd_sync.PDSync")
     @patch.dict("os.environ", {
         "PAGERDUTY_API_TOKEN": "tok",
         "JIRA_SERVER_URL": "https://jira.example.com",
@@ -924,14 +924,14 @@ class TestMain:
         mock_cls.return_value = mock_instance
 
         with patch("sys.argv", ["prog", "--check", "--all"]):
-            from pagerduty_jira_tool import main
+            from pd_sync import main
             main()
 
         # check_incidents called with user_id=None
         call_kwargs = mock_instance.check_incidents.call_args
         assert call_kwargs[1]["user_id"] is None
 
-    @patch("pagerduty_jira_tool.PagerDutyJiraTool")
+    @patch("pd_sync.PDSync")
     @patch.dict("os.environ", {
         "PAGERDUTY_API_TOKEN": "tok",
         "JIRA_SERVER_URL": "https://jira.example.com",
@@ -944,7 +944,7 @@ class TestMain:
         mock_cls.return_value = mock_instance
 
         with patch("sys.argv", ["prog", "--update", "--limit", "5"]):
-            from pagerduty_jira_tool import main
+            from pd_sync import main
             main()
 
         call_kwargs = mock_instance.process_and_update_incidents.call_args

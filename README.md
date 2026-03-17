@@ -16,14 +16,14 @@ NOC Toolkit is a menu-driven command-line interface that provides easy access to
 - 🎯 **Unified Interface** - Single entry point for all NOC tools
 - 📋 **Interactive Menu** - Easy-to-use menu-driven navigation
 - 🔧 **Multiple Tools** - Currently includes:
-  - **PagerDuty-Jira Tool** - Sync PagerDuty incidents with Jira
-  - **PagerDuty Job Extractor** - Extract job names from merged PagerDuty incidents
-  - **PagerDuty Monitor** - Monitor and auto-acknowledge triggered incidents
-  - **PagerDuty Incident Merge** - Find and merge related incidents by job name
-  - **Data Freshness Checker** - DACSCAN data freshness report via Databricks SQL
-  - **NOC Report Assistant** - Sync Jira statuses into shift report (Google Sheets / Excel)
-  - **PD Escalation Tool** - Automate post-DSSD escalation workflow (link DRGN→DSSD, transition, PD note, Slack template)
-  - **PD Resolver** - Auto-resolve PD incidents where Airflow DAG runs recovered
+  - **PD Sync** - Sync PagerDuty incidents with Jira
+  - **PD Jobs** - Extract job names from merged PagerDuty incidents
+  - **PD Monitor** - Monitor and auto-acknowledge triggered incidents
+  - **PD Merge** - Find and merge related incidents by job name
+  - **Freshness** - DACSCAN data freshness report via Databricks SQL
+  - **Shift Report** - Sync Jira statuses into shift report (Google Sheets / Excel)
+  - **PD Escalate** - Automate post-DSSD escalation workflow (link DRGN→DSSD, transition, PD note, Slack template)
+  - **PD Resolve** - Auto-resolve PD incidents where Airflow DAG runs recovered
 - 🚀 **Extensible** - Easy to add new tools
 - ✅ **Health Checks** - Automatically verifies tool availability
 
@@ -52,9 +52,9 @@ NOC Toolkit is a menu-driven command-line interface that provides easy access to
 
    Each tool may require its own configuration. See the tool-specific documentation for details.
 
-   Example for PagerDuty-Jira Tool:
+   Example for PD Sync:
    ```bash
-   cd tools/pd-jira-tool
+   cd tools/pd-sync
    cp .env.example .env
    # Edit .env with your credentials
    ```
@@ -92,28 +92,28 @@ When you launch the toolkit, you'll see an interactive menu:
 ========================================================
 Available Tools:
 ========================================================
-  1. [✓] PagerDuty-Jira Tool
+  1. [✓] PD Sync
       Sync PagerDuty incidents with Jira issues
 
-  2. [✓] PagerDuty Job Extractor
+  2. [✓] PD Jobs
       Extract and analyze PagerDuty on-call schedules
 
-  3. [✓] PagerDuty Monitor
+  3. [✓] PD Monitor
       Monitor and auto-acknowledge triggered incidents
 
-  4. [✓] PagerDuty Incident Merge
+  4. [✓] PD Merge
       Find and merge related PagerDuty incidents by job name
 
-  5. [✓] Data Freshness Checker
+  5. [✓] Freshness
       DACSCAN data freshness report with granular table checks
 
-  6. [✓] NOC Report Assistant
+  6. [✓] Shift Report
       Sync Jira statuses into shift report (Google Sheets / Excel)
 
-  7. [✓] PD Escalation Tool
+  7. [✓] PD Escalate
       Link DRGN→DSSD, transition to Escalated, post PD note
 
-  8. [✓] PD Resolver
+  8. [✓] PD Resolve
       Auto-resolve PD incidents where Airflow jobs recovered
 
 --------------------------------------------------------
@@ -125,7 +125,7 @@ Select tool [0-8]:
 
 ### Menu Navigation
 
-- Enter the **number** of the tool you want to run (e.g., `1` for PagerDuty-Jira Tool)
+- Enter the **number** of the tool you want to run (e.g., `1` for PD Sync)
 - Enter **0** to exit the toolkit
 - Press **Ctrl+C** at any time to interrupt and return to the menu
 
@@ -138,7 +138,7 @@ Select tool [0-8]:
 
 ## 🔧 Available Tools
 
-### 1. PagerDuty-Jira Tool
+### 1. PD Sync
 
 **Purpose:** Synchronizes PagerDuty incidents with Jira issues
 
@@ -155,14 +155,14 @@ Select tool [0-8]:
 
 **Quick setup:**
 ```bash
-cd tools/pd-jira-tool
+cd tools/pd-sync
 cp .env.example .env
 # Edit .env with your PagerDuty and Jira credentials
 ```
 
 ---
 
-### 2. PagerDuty Job Extractor
+### 2. PD Jobs
 
 **Purpose:** Extracts and analyzes PagerDuty on-call schedules
 
@@ -172,18 +172,18 @@ cp .env.example .env
 - Generates reports on job assignments
 - Exports data in various formats
 
-**Configuration:** See [tools/pagerduty-job-extractor/README.md](tools/pagerduty-job-extractor/README.md)
+**Configuration:** See [tools/pd-jobs/README.md](tools/pd-jobs/README.md)
 
 **Quick setup:**
 ```bash
-cd tools/pagerduty-job-extractor
+cd tools/pd-jobs
 cp .env.example .env
 # Edit .env with your PagerDuty API token
 ```
 
 ---
 
-### 3. PagerDuty Monitor
+### 3. PD Monitor
 
 **Purpose:** Automatically acknowledges triggered incidents and posts human-like comments
 
@@ -214,7 +214,7 @@ crontab -e
 
 ---
 
-### 4. PagerDuty Incident Merge
+### 4. PD Merge
 
 **Purpose:** Find and merge related PagerDuty incidents that share the same root cause (same job/DAG name)
 
@@ -243,7 +243,7 @@ python3 tools/pd-merge/pd_merge.py               # Live run
 
 ---
 
-### 5. Data Freshness Checker
+### 5. Freshness
 
 **Purpose:** Automate the daily DACSCAN Data Freshness Report by querying Databricks SQL
 
@@ -259,9 +259,9 @@ python3 tools/pd-merge/pd_merge.py               # Live run
 
 **Quick setup:**
 ```bash
-python3 tools/data-freshness/data_freshness.py --dry-run    # Preview SQL
-python3 tools/data-freshness/data_freshness.py               # Run report
-python3 tools/data-freshness/data_freshness.py --report      # Run + HTML report
+python3 tools/freshness/freshness.py --dry-run    # Preview SQL
+python3 tools/freshness/freshness.py               # Run report
+python3 tools/freshness/freshness.py --report      # Run + HTML report
 ```
 
 **CLI options:**
@@ -273,7 +273,7 @@ python3 tools/data-freshness/data_freshness.py --report      # Run + HTML report
 
 ---
 
-### 6. NOC Report Assistant
+### 6. Shift Report
 
 **Purpose:** Automate shift handoff, sync Jira statuses, and add ticket rows to the shift report
 
@@ -309,7 +309,7 @@ When Google Sheets is configured (`GSHEET_WEBAPP_URL` + `GSHEET_API_KEY`), the t
 
 ---
 
-### 7. PD Escalation Tool
+### 7. PD Escalate
 
 **Purpose:** Automate the post-DSSD escalation workflow — link DRGN→DSSD in Jira, transition DRGN to Escalated, post PD note, print Slack template
 
@@ -339,7 +339,7 @@ python3 tools/pd-escalate/pd_escalate.py --pd Q33L5GALLQ3ESB --dssd DSSD-29386  
 
 ---
 
-### 8. PD Resolver
+### 8. PD Resolve
 
 **Purpose:** Auto-resolve PagerDuty incidents where Airflow DAG runs have recovered (subsequent runs succeeded)
 
@@ -359,8 +359,8 @@ python3 tools/pd-escalate/pd_escalate.py --pd Q33L5GALLQ3ESB --dssd DSSD-29386  
 
 **Quick setup:**
 ```bash
-python3 tools/pd-resolver/pd_resolver.py --dry-run    # Preview
-python3 tools/pd-resolver/pd_resolver.py               # Live run
+python3 tools/pd-resolve/pd_resolve.py --dry-run    # Preview
+python3 tools/pd-resolve/pd_resolve.py               # Live run
 ```
 
 **CLI options:**
@@ -419,9 +419,8 @@ chmod +x noc-toolkit.py
 # Verify tools directory
 ls -la tools/
 
-# Recreate symlinks if needed
-ln -sf /Users/master/pd-jira-tool tools/pd-jira-tool
-ln -sf /Users/master/pagerduty-job-extractor tools/pagerduty-job-extractor
+# Check tool scripts exist
+ls tools/*/
 ```
 
 #### API authentication errors
@@ -483,14 +482,14 @@ Want to add a new tool to the toolkit?
 noc-toolkit/
 ├── noc-toolkit.py              # Main entry point
 ├── tools/                      # All tools
-│   ├── pd-jira-tool/          # PagerDuty-Jira integration
-│   ├── pagerduty-job-extractor/  # Job extractor
+│   ├── pd-sync/          # PD-Jira sync
+│   ├── pd-jobs/  # Extract job names from PD
 │   ├── pd-monitor/            # Auto-acknowledge monitor
 │   ├── pd-merge/              # Incident merge tool
-│   ├── data-freshness/        # DACSCAN freshness report
-│   ├── noc-report-assistant/  # Shift report tool (Google Sheets / Excel)
+│   ├── freshness/        # Data freshness report
+│   ├── shift-report/  # Shift report (Google Sheets / Excel)
 │   ├── pd-escalate/           # Post-DSSD escalation workflow
-│   └── pd-resolver/           # Auto-resolve recovered Airflow incidents
+│   └── pd-resolve/           # Auto-resolve recovered incidents
 ├── config/                     # Configuration files
 ├── docs/                       # Documentation
 │   ├── PROJECT_DOCS.md        # Architecture docs
@@ -505,23 +504,23 @@ noc-toolkit/
 
 ### gsheet_report v0.1.0 (2026-03-16)
 
-- ✅ **New:** Google Sheets adapter for NOC Report Assistant via Apps Script Web App
+- ✅ **New:** Google Sheets adapter for Shift Report via Apps Script Web App
 - ✅ Three operations: sync statuses, add row, start shift — same as Excel mode
 - ✅ Sub-menu in toolkit: Online (Google Sheets) / Local (Excel) mode selection
 - ✅ API key authentication for Apps Script endpoint
 - ✅ 57 unit tests added (pytest)
 
-### noc-report-assistant v0.1.6 (2026-03-13)
+### shift-report v0.1.6 (2026-03-13)
 
 - ✅ **Bug fix:** TTM row gets A:F merge instead of A:B after start_shift
 - ✅ **Bug fix:** overlapping merge cells corrupt XLSX (v0.1.6)
 
-### pd-resolver v0.1.1 (2026-03-16)
+### pd-resolve v0.1.1 (2026-03-16)
 
 - ✅ **Bug fix:** Interactive prompt when launched from toolkit menu (no args)
 - ✅ **Bug fix:** Auto-detect AWS profile from `~/.aws/credentials` for MWAA access
 
-### pd-resolver v0.1.0 (2026-03-16)
+### pd-resolve v0.1.0 (2026-03-16)
 
 - ✅ **New tool:** Auto-resolve PD incidents where Airflow DAG runs recovered
 - ✅ Airflow REST API integration via AWS MWAA web login token
@@ -538,13 +537,13 @@ noc-toolkit/
 - ✅ Removed `sys.exit(1)` from `_get_current_user_id()` — raises `RuntimeError` instead
 - ✅ 97 unit tests added (pytest)
 
-### pd-jira-tool v0.3.2 (2026-03-12)
+### pd-sync v0.3.2 (2026-03-12)
 
 - ✅ Extracted `_parse_iso_dt()` and `_is_assigned_to_user()` helpers — deduplicates ISO parsing and user-filter logic
 - ✅ Removed `sys.exit(1)` from `check_incidents()` and `process_and_update_incidents()` — exceptions propagate to caller
 - ✅ 96 unit tests added (pytest)
 
-### pagerduty-job-extractor v0.1.1 (2026-03-12)
+### pd-jobs v0.1.1 (2026-03-12)
 
 - ✅ Removed `sys.exit(1)` from business logic — exceptions propagate to caller
 - ✅ Fixed `any` → `Any` type hint, removed intermediate `list()` calls on iterators
@@ -555,7 +554,7 @@ noc-toolkit/
 - ✅ Extracted `_parse_iso_dt()` helper — deduplicates 7 repeated ISO datetime parsing patterns
 - ✅ 70 unit tests added (pytest)
 
-### data-freshness v0.1.1 (2026-03-12)
+### freshness v0.1.1 (2026-03-12)
 
 - ✅ Extracted `_is_fresh_date()` helper — deduplicates 5 repeated freshness date checks
 - ✅ Fixed `timedelta` import (was inside function body)
@@ -569,53 +568,53 @@ noc-toolkit/
 
 ### Version 0.6.0 (2026-03-07)
 
-- ✅ Integrated PD Escalation Tool (pd-escalate v0.1.0)
+- ✅ Integrated PD Escalate (pd-escalate v0.1.0)
 - ✅ Automate post-DSSD escalation: link DRGN→DSSD, transition to Escalated, PD note, Slack template
 - ✅ Auto-detect DRGN via PD Jira integration field (`external_references`)
 - ✅ Registered as tool #7 in noc-toolkit menu
 
-### noc-report-assistant v0.1.5 (2026-03-11)
+### shift-report v0.1.5 (2026-03-11)
 
 - ✅ Refactor: unified layout scanning via `_scan_layout()` in all methods, removed `STOP_MARKERS`
 - ✅ Single file I/O pass in `start_shift()` (was double load/save), reduced `_scan_layout()` calls from 6 to 2
 - ✅ Extracted sub-methods: `_restructure_from_prev()`, `_reset_ttm()`, `_repair_permalinks()`
 - ✅ 46 unit tests added (pytest)
 
-### noc-report-assistant v0.1.4 (2026-03-11)
+### shift-report v0.1.4 (2026-03-11)
 
 - ✅ Fix: handle missing "from the previous shifts" section header (fallback to row 8)
 
-### noc-report-assistant v0.1.3 (2026-03-09)
+### shift-report v0.1.3 (2026-03-09)
 
 - ✅ Shift handoff automation: "Start shift" copies tickets from previous shift, updates date, syncs
 - ✅ Menu reordered: 1=Start shift, 2=End shift (SYNC), 3=Add row
 - ✅ Month boundary handling (e.g. Mar 31 → Apr 1)
 
-### noc-report-assistant v0.1.2 (2026-03-09)
+### shift-report v0.1.2 (2026-03-09)
 
 - ✅ Bug fix: sync now processes tickets inside "Things to monitor" section (previously skipped)
 
-### noc-report-assistant v0.1.1 (2026-03-07)
+### shift-report v0.1.1 (2026-03-07)
 
 - ✅ Fixed hyperlink color: explicit Jira-blue (#0052CC) with underline for ticket and Slack links
 
 ### Version 0.5.0 (2026-03-03)
 
-- ✅ Integrated NOC Report Assistant (noc-report-assistant v0.1.0)
+- ✅ Integrated Shift Report (shift-report v0.1.0)
 - ✅ Sync Jira statuses for existing tickets in End-of-Shift Excel report
 - ✅ Add new ticket rows to "Things to monitor" section with Jira + Slack links
 - ✅ Robust openpyxl handling for merges, hyperlinks, and cell formatting
 
 ### Version 0.4.0 (2026-02-27)
 
-- ✅ Integrated Data Freshness Checker (data-freshness v0.1.0)
+- ✅ Integrated Freshness (freshness v0.1.0)
 - ✅ Automated DACSCAN 15-table report via Databricks SQL REST API
 - ✅ Granular table-level checks with host-count and update_ts verification
 - ✅ HTML report generation with color-coded rows for Slack posting
 
 ### Version 0.3.0 (2026-02-26)
 
-- ✅ Integrated PagerDuty Incident Merge tool (pd-merge v0.2.0)
+- ✅ Integrated PD Merge tool (pd-merge v0.2.0)
 - ✅ Three merge scenarios: same-day, cross-date with Jira, mass failure consolidation
 - ✅ Interactive per-incident selection and skip persistence
 
@@ -629,7 +628,7 @@ noc-toolkit/
 **Initial Release**
 
 - ✅ Menu-driven interface
-- ✅ Integrated PagerDuty-Jira Tool, Job Extractor, PD Monitor
+- ✅ Integrated PD Sync, Job Extractor, PD Monitor
 - ✅ Centralized configuration via shared `.env`
 - ✅ Tool health checks
 

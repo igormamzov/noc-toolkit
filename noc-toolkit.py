@@ -291,59 +291,59 @@ class NOCToolkit:
         # Define tools manually (can be moved to JSON config later)
         self.tools = [
             ToolDefinition(
-                tool_id="pd-jira-tool",
-                name="PagerDuty-Jira Tool",
+                tool_id="pd-sync",
+                name="PD Sync",
                 description="Sync PagerDuty incidents with Jira issues",
-                script_path="tools/pd-jira-tool/pagerduty_jira_tool.py",
+                script_path="tools/pd-sync/pd_sync.py",
                 enabled=True
             ),
             ToolDefinition(
-                tool_id="pagerduty-job-extractor",
-                name="PagerDuty Job Extractor",
+                tool_id="pd-jobs",
+                name="PD Jobs",
                 description="Extract job names from merged PagerDuty incidents",
-                script_path="tools/pagerduty-job-extractor/extract_jobs.py",
+                script_path="tools/pd-jobs/pd_jobs.py",
                 enabled=True
             ),
             ToolDefinition(
                 tool_id="pd-monitor",
-                name="PagerDuty Monitor",
+                name="PD Monitor",
                 description="Monitor and auto-acknowledge triggered incidents",
                 script_path="tools/pd-monitor/pd_monitor.py",
                 enabled=True
             ),
             ToolDefinition(
                 tool_id="pd-merge",
-                name="PagerDuty Incident Merge",
+                name="PD Merge",
                 description="Find and merge related PagerDuty incidents by job name",
                 script_path="tools/pd-merge/pd_merge.py",
                 enabled=True
             ),
             ToolDefinition(
-                tool_id="data-freshness",
-                name="Data Freshness Checker",
+                tool_id="freshness",
+                name="Freshness",
                 description="DACSCAN data freshness report with granular table checks",
-                script_path="tools/data-freshness/data_freshness.py",
+                script_path="tools/freshness/freshness.py",
                 enabled=True
             ),
             ToolDefinition(
-                tool_id="noc-report-assistant",
-                name="NOC Report Assistant",
+                tool_id="shift-report",
+                name="Shift Report",
                 description="Sync Jira statuses into shift report (Google Sheets / Excel)",
-                script_path="tools/noc-report-assistant/noc_report_assistant.py",
+                script_path="tools/shift-report/shift_report.py",
                 enabled=True
             ),
             ToolDefinition(
                 tool_id="pd-escalate",
-                name="PD Escalation Tool",
+                name="PD Escalate",
                 description="Link DRGN→DSSD, transition to Escalated, post PD note",
                 script_path="tools/pd-escalate/pd_escalate.py",
                 enabled=True
             ),
             ToolDefinition(
-                tool_id="pd-resolver",
-                name="PD Resolver",
+                tool_id="pd-resolve",
+                name="PD Resolve",
                 description="Auto-resolve PD incidents where Airflow jobs recovered",
-                script_path="tools/pd-resolver/pd_resolver.py",
+                script_path="tools/pd-resolve/pd_resolve.py",
                 enabled=True
             ),
         ]
@@ -588,8 +588,8 @@ class NOCToolkit:
 
         return 0
 
-    def _run_noc_report_menu(self, tool: ToolDefinition) -> int:
-        """Show NOC Report Assistant sub-menu: Online (Google Sheets) or Local (Excel).
+    def _run_shift_report_menu(self, tool: ToolDefinition) -> int:
+        """Show Shift Report sub-menu: Online (Google Sheets) or Local (Excel).
 
         Returns exit code from the selected mode.
         """
@@ -599,7 +599,7 @@ class NOCToolkit:
         )
 
         print(f"\n{'=' * 56}")
-        print("NOC Report Assistant")
+        print("Shift Report")
         print(f"{'=' * 56}")
 
         if gsheet_configured:
@@ -615,10 +615,10 @@ class NOCToolkit:
 
             if choice == '1':
                 gsheet_tool = ToolDefinition(
-                    tool_id="noc-report-gsheet",
-                    name="NOC Report Assistant (Google Sheets)",
+                    tool_id="shift-report-gsheet",
+                    name="Shift Report (Google Sheets)",
                     description="",
-                    script_path="tools/noc-report-assistant/gsheet_report.py",
+                    script_path="tools/shift-report/gsheet_report.py",
                 )
                 return self.run_tool(gsheet_tool)
             elif choice == '2':
@@ -708,8 +708,8 @@ class NOCToolkit:
                 continue  # Sub-menu handles its own prompts
 
             # Route noc-report-assistant through Online/Local sub-menu
-            if selected_tool.tool_id == "noc-report-assistant":
-                self._run_noc_report_menu(selected_tool)
+            if selected_tool.tool_id == "shift-report":
+                self._run_shift_report_menu(selected_tool)
                 continue
 
             # Run the tool

@@ -4,7 +4,7 @@
 
 ---
 
-## 1. PagerDuty-Jira Tool
+## 1. PD Sync
 
 Синхронизация PagerDuty инцидентов с Jira тикетами.
 
@@ -18,7 +18,7 @@
 
 ---
 
-## 2. PagerDuty Job Extractor
+## 2. PD Jobs
 
 Извлечение имён упавших джобов из смерженных PD инцидентов.
 
@@ -28,7 +28,7 @@
 
 ---
 
-## 3. PagerDuty Monitor
+## 3. PD Monitor
 
 Авто-подтверждение triggered инцидентов.
 
@@ -46,7 +46,7 @@
 
 ---
 
-## 4. PagerDuty Incident Merge
+## 4. PD Merge
 
 Поиск и объединение связанных PD инцидентов по имени джоба.
 
@@ -61,7 +61,7 @@
 
 ---
 
-## 5. Data Freshness Checker
+## 5. Freshness
 
 Ежедневный отчёт свежести данных DACSCAN через Databricks SQL.
 
@@ -74,7 +74,7 @@
 
 ---
 
-## 6. NOC Report Assistant
+## 6. Shift Report
 
 Синхронизация Jira статусов в шифт-репорт (Google Sheets или Excel).
 
@@ -90,7 +90,7 @@
 
 ---
 
-## 7. PD Escalation Tool
+## 7. PD Escalate
 
 Автоматизация воркфлоу эскалации после создания DSSD.
 
@@ -104,7 +104,7 @@
 
 ---
 
-## 8. PD Resolver
+## 8. PD Resolve
 
 Авто-резолв PD инцидентов где Airflow DAG раны восстановились.
 

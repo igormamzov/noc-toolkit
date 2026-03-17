@@ -4,7 +4,7 @@
 
 ---
 
-## 1. PagerDuty-Jira Tool
+## 1. PD Sync
 
 Sync PagerDuty incidents with Jira tickets.
 
@@ -18,7 +18,7 @@ Sync PagerDuty incidents with Jira tickets.
 
 ---
 
-## 2. PagerDuty Job Extractor
+## 2. PD Jobs
 
 Extract failed job names from merged PD incidents.
 
@@ -28,7 +28,7 @@ Extract failed job names from merged PD incidents.
 
 ---
 
-## 3. PagerDuty Monitor
+## 3. PD Monitor
 
 Auto-acknowledge triggered incidents.
 
@@ -46,7 +46,7 @@ Auto-acknowledge triggered incidents.
 
 ---
 
-## 4. PagerDuty Incident Merge
+## 4. PD Merge
 
 Find and merge related PD incidents by job name.
 
@@ -61,7 +61,7 @@ Find and merge related PD incidents by job name.
 
 ---
 
-## 5. Data Freshness Checker
+## 5. Freshness
 
 Daily DACSCAN freshness report via Databricks SQL.
 
@@ -74,7 +74,7 @@ Daily DACSCAN freshness report via Databricks SQL.
 
 ---
 
-## 6. NOC Report Assistant
+## 6. Shift Report
 
 Sync Jira statuses into shift report (Google Sheets or Excel).
 
@@ -90,7 +90,7 @@ Sync Jira statuses into shift report (Google Sheets or Excel).
 
 ---
 
-## 7. PD Escalation Tool
+## 7. PD Escalate
 
 Automate post-DSSD escalation workflow.
 
@@ -104,7 +104,7 @@ Automate post-DSSD escalation workflow.
 
 ---
 
-## 8. PD Resolver
+## 8. PD Resolve
 
 Auto-resolve PD incidents where Airflow DAG runs recovered.
 

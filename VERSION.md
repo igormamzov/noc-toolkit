@@ -27,14 +27,14 @@ All components are currently in **0.x.x** version, indicating active development
 |----------------------------|---------|---------------|------------------------------------------------|
 | **noc-toolkit**            | 0.6.0   | Development   | Main toolkit launcher and orchestrator         |
 | **pd-monitor**             | 0.1.4   | Development   | Auto-acknowledge triggered PagerDuty incidents |
-| **pd-jira-tool**           | 0.3.2   | Development   | PagerDuty-Jira integration and sync tool       |
-| **pagerduty-job-extractor**| 0.1.1   | Development   | Extract failed job names from PD incidents     |
+| **pd-sync**           | 0.3.2   | Development   | PagerDuty-Jira sync       |
+| **pd-jobs**| 0.1.1   | Development   | Extract job names from PD incidents     |
 | **pd-merge**               | 0.2.4   | Development   | Find and merge related PD incidents by job name|
 | **pd-escalate**            | 0.1.1   | Development   | Post-DSSD escalation workflow automation       |
-| **data-freshness**         | 0.1.1   | Development   | DACSCAN data freshness report via Databricks SQL|
-| **noc-report-assistant**   | 0.1.6   | Development   | Sync Jira statuses into shift report (Google Sheets / Excel)|
+| **freshness**         | 0.1.1   | Development   | Data freshness report via Databricks SQL|
+| **shift-report**   | 0.1.6   | Development   | Shift report with Jira sync (Google Sheets / Excel)|
 | **gsheet_report**          | 0.1.0   | Development   | Google Sheets adapter for NOC Report Assistant   |
-| **pd-resolver**            | 0.1.1   | Development   | Auto-resolve PD incidents where Airflow jobs recovered|
+| **pd-resolve**            | 0.1.1   | Development   | Auto-resolve recovered Airflow incidents|
 
 ---
 
@@ -77,13 +77,13 @@ print(f"Version: {VERSION}")
 - `GSheetClient` and `JiraClient` classes with urllib HTTP
 - 57 unit tests added (pytest)
 
-### noc-report-assistant v0.1.6 (2026-03-13)
+### shift-report v0.1.6 (2026-03-13)
 
 **Bug fix: merge cell corruption after start_shift:**
 - TTM row gets A:F merge instead of A:B after start_shift — fixed merge range
 - Overlapping merge cells corrupt XLSX — fixed by proper unmerge before re-merge
 
-### pd-resolver v0.1.1 (2026-03-16)
+### pd-resolve v0.1.1 (2026-03-16)
 
 **Bug fixes: toolkit menu launch + AWS profile auto-detect:**
 - `incident` argument now optional (`nargs='?'`) — prompts interactively when launched from toolkit menu
@@ -91,10 +91,10 @@ print(f"Version: {VERSION}")
 - Uses `boto3.Session(profile_name=...)` instead of `boto3.client()` for explicit profile selection
 - Works without `AWS_PROFILE` env var or `aws` CLI installed
 
-### pd-resolver v0.1.0 (2026-03-16)
+### pd-resolve v0.1.0 (2026-03-16)
 
 **Initial release — auto-resolve recovered Airflow incidents:**
-- `PDResolver` class with 7-step workflow: fetch PD incident → extract DAG name → check Airflow runs → find DRGN → search Confluence runbook → close DRGN → resolve PD
+- `PDResolve` class with 7-step workflow: fetch PD incident → extract DAG name → check Airflow runs → find DRGN → search Confluence runbook → close DRGN → resolve PD
 - Airflow REST API integration via AWS MWAA web login token
 - DRGN Close transition with proper field IDs (Resolution, Root Cause, SLA Violation, Comment)
 - Confluence runbook search via DS space
@@ -129,7 +129,7 @@ print(f"Version: {VERSION}")
 - No new dependencies — reuses `pagerduty` + `jira` libs already in requirements.txt
 - Registered as tool #7 in noc-toolkit menu
 
-### pd-jira-tool v0.3.2 (2026-03-12)
+### pd-sync v0.3.2 (2026-03-12)
 
 **Refactor: deduplicate helpers, remove sys.exit from business logic, add tests:**
 - Extracted `_parse_iso_dt()` helper — replaces inline `datetime.fromisoformat(iso_str.replace('Z', '+00:00'))` pattern
@@ -137,7 +137,7 @@ print(f"Version: {VERSION}")
 - Removed `sys.exit(1)` from `check_incidents()` and `process_and_update_incidents()` — exceptions now propagate to caller; `main()` handles exit codes
 - 96 unit tests added (pytest)
 
-### pagerduty-job-extractor v0.1.1 (2026-03-12)
+### pd-jobs v0.1.1 (2026-03-12)
 
 **Refactor: remove sys.exit from business logic, add tests:**
 - Removed `sys.exit(1)` from `get_jobs_from_incident()` — exceptions now propagate to caller; `main()` handles exit codes
@@ -151,7 +151,7 @@ print(f"Version: {VERSION}")
 - Extracted `_parse_iso_dt()` helper — replaces 7 duplicate `datetime.fromisoformat(iso_str.replace('Z', '+00:00'))` patterns
 - 70 unit tests added (pytest)
 
-### data-freshness v0.1.1 (2026-03-12)
+### freshness v0.1.1 (2026-03-12)
 
 **Refactor: deduplicate freshness check logic, add tests:**
 - Extracted `_is_fresh_date()` helper — replaces 5 duplicate `today_str in X or yesterday_str in X` patterns
@@ -178,7 +178,7 @@ print(f"Version: {VERSION}")
 - Slack template output for #cds-ops-24x7-int with hyperlink instructions
 - Dry-run mode for safe testing
 
-### noc-report-assistant v0.1.5 (2026-03-11)
+### shift-report v0.1.5 (2026-03-11)
 
 **Refactor: unified layout scanning, reduced I/O, extracted sub-methods:**
 - `run()` and `add_row()` now use `_scan_layout()` instead of manual loops; removed `STOP_MARKERS`
@@ -187,7 +187,7 @@ print(f"Version: {VERSION}")
 - Extracted `_restructure_from_prev()`, `_reset_ttm()`, `_repair_permalinks()` sub-methods
 - 46 unit tests added (pytest)
 
-### noc-report-assistant v0.1.4 (2026-03-11)
+### shift-report v0.1.4 (2026-03-11)
 
 **Fix: handle missing "from the previous shifts" section header:**
 - `_scan_layout()` no longer crashes when the "Things to Monitor from the previous shifts" header is absent
@@ -195,7 +195,7 @@ print(f"Version: {VERSION}")
 - `start_shift()` now writes the header text into cell A when missing
 - Handles `current_count=0` edge case (empty section before "Things to monitor")
 
-### noc-report-assistant v0.1.3 (2026-03-09)
+### shift-report v0.1.3 (2026-03-09)
 
 **Shift handoff automation:**
 - New action "Start shift" — copies all tickets from previous shift, updates date, runs sync
@@ -207,14 +207,14 @@ print(f"Version: {VERSION}")
 - New methods: `start_shift()`, `_scan_layout()`, `_collect_source_rows()`, `_update_date()`
 - Extracted `_write_ticket_row()` and `_rebuild_section_merge()` helpers
 
-### noc-report-assistant v0.1.2 (2026-03-09)
+### shift-report v0.1.2 (2026-03-09)
 
 **Bug fix — sync now processes "Things to monitor" rows:**
 - `STOP_MARKERS` no longer includes "Things to monitor", only "Permalinks"
 - Previously, tickets added via "Add row" into the TTM section were skipped during sync
 - Status and Assignee updates now apply to all ticket rows including those inside TTM
 
-### noc-report-assistant v0.1.1 (2026-03-07)
+### shift-report v0.1.1 (2026-03-07)
 
 **Hyperlink color fix:**
 - Explicit Jira-blue (#0052CC) font color with underline for hyperlink cells (columns D and F)
@@ -267,7 +267,7 @@ print(f"Version: {VERSION}")
 - Interactive opt-in: option shown only when 2+ RDS export incidents detected
 - Updated pd-merge-logic.md to v1.3
 
-### pd-jira-tool v0.3.1 (2026-03-04)
+### pd-sync v0.3.1 (2026-03-04)
 
 **Auto-handle ignore/disabled incidents:**
 - Detect "ignore" or "disabled" keywords in incident title and last 3 comments
@@ -278,7 +278,7 @@ print(f"Version: {VERSION}")
 
 ### NOC Toolkit v0.5.0 (2026-03-03)
 
-**New tool — NOC Report Assistant (noc-report-assistant v0.1.0):**
+**New tool — NOC Report Assistant (shift-report v0.1.0):**
 - Sync Jira statuses (column E) for existing tickets in End-of-Shift Excel report
 - Add new ticket rows to "Things to monitor" section with Jira + Slack links
 - Auto-detect Jira/Slack links in any paste order
@@ -289,7 +289,7 @@ print(f"Version: {VERSION}")
 - Registered as tool #6 in noc-toolkit menu
 - New dependency: openpyxl>=3.1.0
 
-### noc-report-assistant v0.1.0 (2026-03-03)
+### shift-report v0.1.0 (2026-03-03)
 
 **Initial release:**
 - Two actions: sync statuses, add row
@@ -300,7 +300,7 @@ print(f"Version: {VERSION}")
 
 ### NOC Toolkit v0.4.0 (2026-02-27)
 
-**New tool — Data Freshness Checker (data-freshness v0.1.0):**
+**New tool — Data Freshness Checker (freshness v0.1.0):**
 - Automated DACSCAN 15-table freshness report via Databricks SQL REST API
 - Granular host-level checks for DACSCAN tables (52 hosts expected)
 - Simple max(update_ts) checks for AGG/AUDIT/SUMMARY and BI-LOADER tables
@@ -311,7 +311,7 @@ print(f"Version: {VERSION}")
 - Registered as tool #5 in noc-toolkit menu
 - No new dependencies — uses requests (already bundled)
 
-### data-freshness v0.1.0 (2026-02-27)
+### freshness v0.1.0 (2026-02-27)
 
 **Initial release:**
 - DatabricksSQL REST API client (Statement Execution API with polling)
@@ -341,7 +341,7 @@ print(f"Version: {VERSION}")
 **PyInstaller EXE fixes — tools now work inside the compiled binary:**
 
 **Bug fixes:**
-- **Symlinks replaced with real files** — `tools/` contained symlinks to local dev directories (`/Users/master/pd-jira-tool/`, etc.) which don't exist on GitHub Actions runners. PyInstaller was bundling an empty `tools/` directory, so the EXE launched but showed "Script not found" for all 3 tools. Fixed by copying the actual Python scripts into the repository.
+- **Symlinks replaced with real files** — `tools/` contained symlinks to local dev directories (`/Users/master/pd-sync/`, etc.) which don't exist on GitHub Actions runners. PyInstaller was bundling an empty `tools/` directory, so the EXE launched but showed "Script not found" for all 3 tools. Fixed by copying the actual Python scripts into the repository.
 - **`.env` not found in EXE mode** — `Path(__file__).parent` in PyInstaller onefile mode points to the temp extraction directory (`_MEI...`), not the folder where the EXE lives. Fixed by using `Path(sys.executable).parent` when `sys.frozen` is True, so `.env` placed next to the EXE is correctly loaded.
 - **Tools re-launched the toolkit instead of running** — `subprocess.run([sys.executable, tool_path])` was used to launch tools, but in PyInstaller mode `sys.executable` is `NOC-Toolkit.exe` (not Python). This caused the EXE to re-launch itself instead of running the tool script. Fixed by using `runpy.run_path()` to execute tools in-process when frozen.
 - **Tool dependencies not bundled** — Tools import `pagerduty`, `jira`, `tqdm` at runtime, but PyInstaller only auto-detects imports from the main script. Since tools are loaded dynamically via `runpy`, these packages were not included in the EXE. Fixed by adding them to `hiddenimports` in `NOC-Toolkit.spec`.
@@ -364,7 +364,7 @@ print(f"Version: {VERSION}")
 - Unified launcher for all NOC tools
 - Centralized configuration via shared `.env` file
 - Standardized versioning across all tools
-- Tools: pd-monitor (0.1.0), pd-jira-tool (0.3.0), pagerduty-job-extractor (0.1.0)
+- Tools: pd-monitor (0.1.0), pd-sync (0.3.0), pd-jobs (0.1.0)
 
 ### pd-monitor v0.1.0 (2026-02-22)
 
@@ -374,7 +374,7 @@ print(f"Version: {VERSION}")
 - Continuous monitoring mode with countdown timer
 - Output file for incidents needing attention
 
-### pd-jira-tool v0.3.0 (2026-02-22)
+### pd-sync v0.3.0 (2026-02-22)
 
 **Version standardization:**
 - Formalized version number from previous informal "v3.2"
@@ -382,7 +382,7 @@ print(f"Version: {VERSION}")
 - Progress bar with time estimation
 - Smart filtering and duplicate prevention
 
-### pagerduty-job-extractor v0.1.0 (2026-02-22)
+### pd-jobs v0.1.0 (2026-02-22)
 
 **Initial versioned release:**
 - Extract failed job names matching `jb_*` pattern
@@ -417,5 +417,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-03-16
+**Last Updated:** 2026-03-17
 **Maintained by:** NOC Team

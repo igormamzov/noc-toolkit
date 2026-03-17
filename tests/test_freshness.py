@@ -5,10 +5,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from data_freshness import (
+from freshness import (
     DatabricksSQL,
     DatabricksAPIError,
-    DataFreshnessChecker,
+    FreshnessChecker,
     FreshnessRow,
     GranularResult,
     _html_escape,
@@ -45,10 +45,10 @@ def _make_row(
     return FreshnessRow(group_name, db_name, table_name, data_date, sla, met, comments)
 
 
-def _make_checker() -> DataFreshnessChecker:
-    """Create a DataFreshnessChecker with a mocked DatabricksSQL client."""
+def _make_checker() -> FreshnessChecker:
+    """Create a FreshnessChecker with a mocked DatabricksSQL client."""
     mock_db = MagicMock(spec=DatabricksSQL)
-    return DataFreshnessChecker(mock_db, verbose=False)
+    return FreshnessChecker(mock_db, verbose=False)
 
 
 # ===========================================================================
@@ -73,14 +73,14 @@ class TestHtmlEscape:
 
 class TestYesterdayStr:
 
-    @patch("data_freshness.datetime")
+    @patch("freshness.datetime")
     def test_returns_yesterday(self, mock_dt):
         mock_dt.now.return_value = datetime(2026, 3, 11, 14, 0, 0, tzinfo=timezone.utc)
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
         result = _yesterday_str()
         assert result == "2026-03-10"
 
-    @patch("data_freshness.datetime")
+    @patch("freshness.datetime")
     def test_month_boundary(self, mock_dt):
         mock_dt.now.return_value = datetime(2026, 4, 1, 10, 0, 0, tzinfo=timezone.utc)
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
@@ -90,26 +90,26 @@ class TestYesterdayStr:
 
 class TestIsFreshDate:
 
-    @patch("data_freshness._yesterday_str", return_value="2026-03-10")
-    @patch("data_freshness.datetime")
+    @patch("freshness._yesterday_str", return_value="2026-03-10")
+    @patch("freshness.datetime")
     def test_today_is_fresh(self, mock_dt, _mock_yesterday):
         mock_dt.now.return_value = datetime(2026, 3, 11, 14, 0, 0, tzinfo=timezone.utc)
         assert _is_fresh_date("2026-03-11 08:00:00") is True
 
-    @patch("data_freshness._yesterday_str", return_value="2026-03-10")
-    @patch("data_freshness.datetime")
+    @patch("freshness._yesterday_str", return_value="2026-03-10")
+    @patch("freshness.datetime")
     def test_yesterday_is_fresh(self, mock_dt, _mock_yesterday):
         mock_dt.now.return_value = datetime(2026, 3, 11, 14, 0, 0, tzinfo=timezone.utc)
         assert _is_fresh_date("2026-03-10") is True
 
-    @patch("data_freshness._yesterday_str", return_value="2026-03-10")
-    @patch("data_freshness.datetime")
+    @patch("freshness._yesterday_str", return_value="2026-03-10")
+    @patch("freshness.datetime")
     def test_old_date_is_stale(self, mock_dt, _mock_yesterday):
         mock_dt.now.return_value = datetime(2026, 3, 11, 14, 0, 0, tzinfo=timezone.utc)
         assert _is_fresh_date("2026-03-08") is False
 
-    @patch("data_freshness._yesterday_str", return_value="2026-03-10")
-    @patch("data_freshness.datetime")
+    @patch("freshness._yesterday_str", return_value="2026-03-10")
+    @patch("freshness.datetime")
     def test_na_is_stale(self, mock_dt, _mock_yesterday):
         mock_dt.now.return_value = datetime(2026, 3, 11, 14, 0, 0, tzinfo=timezone.utc)
         assert _is_fresh_date("N/A") is False
@@ -117,21 +117,21 @@ class TestIsFreshDate:
 
 class TestSlaStatus:
 
-    @patch("data_freshness.datetime")
+    @patch("freshness.datetime")
     def test_before_deadline(self, mock_dt):
         mock_dt.now.return_value = datetime(2026, 3, 11, 15, 0, 0, tzinfo=timezone.utc)
         result = _sla_status()
         assert "until SLA deadline" in result
         assert "2h 30m" in result
 
-    @patch("data_freshness.datetime")
+    @patch("freshness.datetime")
     def test_after_deadline(self, mock_dt):
         mock_dt.now.return_value = datetime(2026, 3, 11, 18, 0, 0, tzinfo=timezone.utc)
         result = _sla_status()
         assert "PASSED" in result
         assert "0h 30m" in result
 
-    @patch("data_freshness.datetime")
+    @patch("freshness.datetime")
     def test_exactly_at_deadline(self, mock_dt):
         mock_dt.now.return_value = datetime(2026, 3, 11, 17, 30, 0, tzinfo=timezone.utc)
         result = _sla_status()
@@ -300,7 +300,7 @@ class TestFormatJson:
 
 
 # ===========================================================================
-# Tests: DataFreshnessChecker
+# Tests: FreshnessChecker
 # ===========================================================================
 
 
@@ -365,7 +365,7 @@ class TestRunMainReport:
 
 class TestCheckDacscanTable:
 
-    @patch("data_freshness._is_fresh_date", return_value=True)
+    @patch("freshness._is_fresh_date", return_value=True)
     def test_standard_fresh(self, _mock_fresh):
         checker = _make_checker()
         checker.db.execute.return_value = [
@@ -376,7 +376,7 @@ class TestCheckDacscanTable:
         assert result.check_type == "host-level"
         assert "52/52" in result.detail
 
-    @patch("data_freshness._is_fresh_date", return_value=True)
+    @patch("freshness._is_fresh_date", return_value=True)
     def test_standard_delayed_low_hosts(self, _mock_fresh):
         checker = _make_checker()
         checker.db.execute.return_value = [
@@ -386,7 +386,7 @@ class TestCheckDacscanTable:
         # Fresh date but not enough hosts → still delayed
         assert result.is_actually_fresh is False
 
-    @patch("data_freshness._is_fresh_date", return_value=True)
+    @patch("freshness._is_fresh_date", return_value=True)
     def test_event_opt_special(self, _mock_fresh):
         checker = _make_checker()
         checker.db.execute.return_value = [
@@ -407,7 +407,7 @@ class TestCheckDacscanTable:
 
 class TestCheckNonDacscanTable:
 
-    @patch("data_freshness._is_fresh_date", return_value=True)
+    @patch("freshness._is_fresh_date", return_value=True)
     def test_fresh(self, _mock_fresh):
         checker = _make_checker()
         checker.db.execute.return_value = [
@@ -417,7 +417,7 @@ class TestCheckNonDacscanTable:
         assert result.is_actually_fresh is True
         assert result.check_type == "update_ts"
 
-    @patch("data_freshness._is_fresh_date", return_value=False)
+    @patch("freshness._is_fresh_date", return_value=False)
     def test_stale(self, _mock_fresh):
         checker = _make_checker()
         checker.db.execute.return_value = [
@@ -435,7 +435,7 @@ class TestCheckNonDacscanTable:
 
 class TestCheckBiLoaderTable:
 
-    @patch("data_freshness._is_fresh_date", return_value=True)
+    @patch("freshness._is_fresh_date", return_value=True)
     def test_fresh(self, _mock_fresh):
         checker = _make_checker()
         checker.db.execute.return_value = [
@@ -454,7 +454,7 @@ class TestCheckBiLoaderTable:
 
 class TestRunGranularChecks:
 
-    @patch("data_freshness._is_fresh_date", return_value=True)
+    @patch("freshness._is_fresh_date", return_value=True)
     def test_dacscan_table_dispatched(self, _mock_fresh):
         checker = _make_checker()
         checker.db.execute.return_value = [
@@ -481,7 +481,7 @@ class TestRunGranularChecks:
         assert results[0].check_type == "error"
         assert results[0].is_actually_fresh is False
 
-    @patch("data_freshness._is_fresh_date", return_value=True)
+    @patch("freshness._is_fresh_date", return_value=True)
     def test_non_dacscan_dispatched(self, _mock_fresh):
         checker = _make_checker()
         checker.db.execute.return_value = [{"max_update": "2026-03-11 08:00:00"}]
@@ -491,7 +491,7 @@ class TestRunGranularChecks:
         assert len(results) == 1
         assert results[0].check_type == "update_ts"
 
-    @patch("data_freshness._is_fresh_date", return_value=True)
+    @patch("freshness._is_fresh_date", return_value=True)
     def test_bi_loader_dispatched(self, _mock_fresh):
         checker = _make_checker()
         checker.db.execute.return_value = [

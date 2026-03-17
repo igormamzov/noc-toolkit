@@ -36,7 +36,7 @@ def _parse_iso_dt(iso_str: str) -> datetime:
     return datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
 
 
-class PagerDutyJiraTool:
+class PDSync:
     """Main class for PagerDuty-Jira integration."""
 
     # Regex pattern to match Jira ticket numbers (e.g., PROJ-123, ABC-4567)
@@ -1004,7 +1004,7 @@ def main() -> None:
         # quiet_mode is inverse of show_details
         quiet_mode = not show_details
 
-        tool = PagerDutyJiraTool(
+        tool = PDSync(
             pagerduty_api_token=pagerduty_api_token,
             jira_server_url=jira_server_url,
             jira_email=jira_email,

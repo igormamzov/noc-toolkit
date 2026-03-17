@@ -3,8 +3,8 @@
 import pytest
 from openpyxl import load_workbook
 
-from noc_report_assistant import (
-    NOCReportAssistant,
+from shift_report import (
+    ShiftReport,
     ShiftLayout,
     RowSnapshot,
     TICKET_START_ROW,
@@ -27,7 +27,7 @@ class TestScanLayout:
         """Both sections have headers — standard case."""
         wb = load_workbook(report_path)
         ws = wb["Night-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
+        layout = ShiftReport._scan_layout(ws)
 
         assert layout.from_prev_row == 8
         assert layout.ttm_row > layout.from_prev_row
@@ -39,7 +39,7 @@ class TestScanLayout:
         """Day-Shift-NEW has no 'from previous shifts' header — should fallback to row 8."""
         wb = load_workbook(report_no_header)
         ws = wb["Day-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
+        layout = ShiftReport._scan_layout(ws)
 
         assert layout.from_prev_row == TICKET_START_ROW
         assert layout.ttm_row > layout.from_prev_row
@@ -49,7 +49,7 @@ class TestScanLayout:
         """'Things to monitor        ' (trailing spaces) should still be detected."""
         wb = load_workbook(report_path)
         ws = wb["Night-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
+        layout = ShiftReport._scan_layout(ws)
         # TTM should be found despite trailing spaces
         ttm_value = str(ws.cell(row=layout.ttm_row, column=1).value or "")
         assert "things to monitor" in ttm_value.lower().strip()
@@ -69,7 +69,7 @@ class TestScanLayout:
 
         wb2 = load_workbook(file_path)
         with pytest.raises(RuntimeError, match="Things to monitor"):
-            NOCReportAssistant._scan_layout(wb2.active)
+            ShiftReport._scan_layout(wb2.active)
 
     def test_missing_permalinks_raises(self, tmp_path):
         """Sheet without 'Permalinks' should raise RuntimeError."""
@@ -84,13 +84,13 @@ class TestScanLayout:
 
         wb2 = load_workbook(file_path)
         with pytest.raises(RuntimeError, match="Permalinks"):
-            NOCReportAssistant._scan_layout(wb2.active)
+            ShiftReport._scan_layout(wb2.active)
 
     def test_newline_in_from_prev_header(self, report_path):
         """Header with newline: 'Things to Monitor\\nfrom the previous shifts'."""
         wb = load_workbook(report_path)
         ws = wb["Night-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
+        layout = ShiftReport._scan_layout(ws)
 
         cell_value = str(ws.cell(row=layout.from_prev_row, column=1).value or "")
         assert "from the previous shifts" in cell_value.lower()
@@ -106,8 +106,8 @@ class TestCollectSourceRows:
         """Should collect tickets from 'from previous' AND 'TTM' sections."""
         wb = load_workbook(report_path)
         ws = wb["Night-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
-        rows = NOCReportAssistant._collect_source_rows(ws, layout)
+        layout = ShiftReport._scan_layout(ws)
+        rows = ShiftReport._collect_source_rows(ws, layout)
 
         # Night has 3 from_prev + 1 TTM = 4 total
         assert len(rows) == 4
@@ -117,8 +117,8 @@ class TestCollectSourceRows:
         """Ticket IDs should match what we put in."""
         wb = load_workbook(report_path)
         ws = wb["Night-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
-        rows = NOCReportAssistant._collect_source_rows(ws, layout)
+        layout = ShiftReport._scan_layout(ws)
+        rows = ShiftReport._collect_source_rows(ws, layout)
 
         ticket_ids = [r.ticket_id for r in rows]
         assert "DSSD-29001" in ticket_ids
@@ -130,8 +130,8 @@ class TestCollectSourceRows:
         """Hyperlinks from cell.hyperlink should be captured in RowSnapshot."""
         wb = load_workbook(report_path)
         ws = wb["Night-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
-        rows = NOCReportAssistant._collect_source_rows(ws, layout)
+        layout = ShiftReport._scan_layout(ws)
+        rows = ShiftReport._collect_source_rows(ws, layout)
 
         first = rows[0]
         assert first.ticket_hyperlink is not None
@@ -143,8 +143,8 @@ class TestCollectSourceRows:
         """Day-Shift-NEW has 0 TTM tickets — 'from previous' only."""
         wb = load_workbook(report_path)
         ws = wb["Day-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
-        rows = NOCReportAssistant._collect_source_rows(ws, layout)
+        layout = ShiftReport._scan_layout(ws)
+        rows = ShiftReport._collect_source_rows(ws, layout)
 
         # Day has 2 from_prev + 0 TTM = 2 total
         assert len(rows) == 2
@@ -157,10 +157,10 @@ class TestCollectSourceRows:
 class TestOppositeSheet:
 
     def test_night_to_day(self):
-        assert NOCReportAssistant._opposite_sheet("Night-Shift-NEW") == "Day-Shift-NEW"
+        assert ShiftReport._opposite_sheet("Night-Shift-NEW") == "Day-Shift-NEW"
 
     def test_day_to_night(self):
-        assert NOCReportAssistant._opposite_sheet("Day-Shift-NEW") == "Night-Shift-NEW"
+        assert ShiftReport._opposite_sheet("Day-Shift-NEW") == "Night-Shift-NEW"
 
 
 # ===================================================================
@@ -175,7 +175,7 @@ class TestUpdateDate:
         source_ws = wb["Day-Shift-NEW"]  # source: day=10
         target_ws = wb["Night-Shift-NEW"]
 
-        new_day, new_month = NOCReportAssistant._update_date(
+        new_day, new_month = ShiftReport._update_date(
             target_ws, source_ws, "Night-Shift-NEW",
         )
         assert new_day == 11
@@ -188,7 +188,7 @@ class TestUpdateDate:
         source_ws = wb["Night-Shift-NEW"]  # source: day=10
         target_ws = wb["Day-Shift-NEW"]
 
-        new_day, new_month = NOCReportAssistant._update_date(
+        new_day, new_month = ShiftReport._update_date(
             target_ws, source_ws, "Day-Shift-NEW",
         )
         assert new_day == 10
@@ -200,7 +200,7 @@ class TestUpdateDate:
         source_ws = wb["Day-Shift-NEW"]  # day=31, month=Mar
         target_ws = wb["Night-Shift-NEW"]
 
-        new_day, new_month = NOCReportAssistant._update_date(
+        new_day, new_month = ShiftReport._update_date(
             target_ws, source_ws, "Night-Shift-NEW",
         )
         assert new_day == 1
@@ -212,7 +212,7 @@ class TestUpdateDate:
         source_ws = wb["Day-Shift-NEW"]  # day=31, month=Dec
         target_ws = wb["Night-Shift-NEW"]
 
-        new_day, new_month = NOCReportAssistant._update_date(
+        new_day, new_month = ShiftReport._update_date(
             target_ws, source_ws, "Night-Shift-NEW",
         )
         assert new_day == 1
@@ -224,7 +224,7 @@ class TestUpdateDate:
         source_ws = wb["Night-Shift-NEW"]  # day=31, month=Mar
         target_ws = wb["Day-Shift-NEW"]
 
-        new_day, new_month = NOCReportAssistant._update_date(
+        new_day, new_month = ShiftReport._update_date(
             target_ws, source_ws, "Day-Shift-NEW",
         )
         assert new_day == 31
@@ -239,7 +239,7 @@ class TestBuildStatusString:
 
     @pytest.fixture
     def assistant(self):
-        return NOCReportAssistant(
+        return ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
             dry_run=True,
@@ -277,7 +277,7 @@ class TestExtractTicketId:
 
     @pytest.fixture
     def assistant(self):
-        return NOCReportAssistant(
+        return ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
             dry_run=True,
@@ -328,7 +328,7 @@ class TestRunSync:
         mock_jira("DSSD-29003", "Work In Progress", "Jane Smith")
         mock_jira("DRGN-50001", "Open", "Unassigned")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
         )
@@ -339,7 +339,7 @@ class TestRunSync:
         # Verify changes were written
         wb = load_workbook(report_path)
         ws = wb["Night-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
+        layout = ShiftReport._scan_layout(ws)
 
         # Find DSSD-29001 and check its status
         for row in range(layout.from_prev_row, layout.permalinks_row):
@@ -354,7 +354,7 @@ class TestRunSync:
         """Parenthetical notes like (recurring) should be preserved."""
         mock_jira("DSSD-29003", "Open", "Jane Smith")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
         )
@@ -374,7 +374,7 @@ class TestRunSync:
         ws_before = wb_before["Night-Shift-NEW"]
         original_status = ws_before.cell(row=8, column=5).value
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
             dry_run=True,
@@ -390,7 +390,7 @@ class TestRunSync:
         """Sync should not process rows below Permalinks."""
         mock_jira("DSSD-29001", "Closed", "Kumar")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
             dry_run=True,
@@ -415,7 +415,7 @@ class TestStartShift:
         mock_jira("DSSD-29010", "Open", "Unassigned")
         mock_jira("DSSD-29011", "In Progress", "Alice")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
         )
@@ -429,7 +429,7 @@ class TestStartShift:
         # Verify the tickets are in the file
         wb = load_workbook(report_path)
         ws = wb["Night-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
+        layout = ShiftReport._scan_layout(ws)
 
         ticket_ids = []
         for row in range(layout.from_prev_row, layout.ttm_row):
@@ -445,7 +445,7 @@ class TestStartShift:
         mock_jira("DSSD-29010", "Open", "Unassigned")
         mock_jira("DSSD-29011", "In Progress", "Alice")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
         )
@@ -453,7 +453,7 @@ class TestStartShift:
 
         wb = load_workbook(report_path)
         ws = wb["Night-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
+        layout = ShiftReport._scan_layout(ws)
 
         # TTM should span exactly 1 row
         assert layout.ttm_end == layout.ttm_row
@@ -467,7 +467,7 @@ class TestStartShift:
         mock_jira("DSSD-29002", "In Progress", "John Doe")
         mock_jira("DSSD-29003", "Open", "Jane Smith")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
         )
@@ -476,7 +476,7 @@ class TestStartShift:
 
         wb = load_workbook(report_no_header)
         ws = wb["Day-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
+        layout = ShiftReport._scan_layout(ws)
 
         header_text = str(ws.cell(row=layout.from_prev_row, column=1).value or "")
         assert "from the previous shifts" in header_text.lower()
@@ -488,7 +488,7 @@ class TestStartShift:
         for tid in ["DSSD-29001", "DSSD-29002", "DSSD-29003", "DRGN-50001"]:
             mock_jira(tid, "Open", "Unassigned")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
         )
@@ -498,7 +498,7 @@ class TestStartShift:
 
         wb = load_workbook(report_path)
         ws = wb["Day-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
+        layout = ShiftReport._scan_layout(ws)
 
         # 4 ticket rows in "from previous" section
         count = layout.from_prev_end - layout.from_prev_row + 1
@@ -510,7 +510,7 @@ class TestStartShift:
         mock_jira("DSSD-29010", "Open", "Unassigned")
         mock_jira("DSSD-29011", "In Progress", "Alice")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
         )
@@ -518,7 +518,7 @@ class TestStartShift:
 
         wb = load_workbook(report_path)
         ws = wb["Night-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
+        layout = ShiftReport._scan_layout(ws)
 
         count = layout.from_prev_end - layout.from_prev_row + 1
         assert count == 2
@@ -528,7 +528,7 @@ class TestStartShift:
         mock_jira("DSSD-29010", "Open", "Unassigned")
         mock_jira("DSSD-29011", "In Progress", "Alice")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
         )
@@ -544,7 +544,7 @@ class TestStartShift:
         mock_jira("DSSD-29010", "Open", "Unassigned")
         mock_jira("DSSD-29011", "In Progress", "Alice")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
         )
@@ -552,7 +552,7 @@ class TestStartShift:
 
         wb = load_workbook(report_path)
         ws = wb["Night-Shift-NEW"]
-        layout = NOCReportAssistant._scan_layout(ws)
+        layout = ShiftReport._scan_layout(ws)
 
         assert ws.cell(row=layout.permalinks_row, column=1).value == "Permalinks"
         # Permalink data rows should still exist
@@ -561,7 +561,7 @@ class TestStartShift:
 
     def test_dry_run_returns_empty_sync(self, report_path):
         """Dry run should return empty sync_updates list."""
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
             dry_run=True,
@@ -574,7 +574,7 @@ class TestStartShift:
         """Start shift at Mar 31 → Night should get Apr 1."""
         mock_jira("DSSD-29010", "Open", "Unassigned")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
         )
@@ -594,7 +594,7 @@ class TestAddRow:
         """Adding to empty TTM should write directly into TTM row (no insert)."""
         mock_jira("DSSD-29999", "Open", "Unassigned", summary="New bug found")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
         )
@@ -615,14 +615,14 @@ class TestAddRow:
         """Adding to TTM with existing ticket should insert a new row."""
         mock_jira("DRGN-50002", "Open", "Bob", summary="Another issue")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
         )
         # Night-Shift-NEW has 1 TTM ticket already
         wb_before = load_workbook(report_path)
         ws_before = wb_before["Night-Shift-NEW"]
-        layout_before = NOCReportAssistant._scan_layout(ws_before)
+        layout_before = ShiftReport._scan_layout(ws_before)
         permalinks_before = layout_before.permalinks_row
 
         row = assistant.add_row(
@@ -633,7 +633,7 @@ class TestAddRow:
 
         wb_after = load_workbook(report_path)
         ws_after = wb_after["Night-Shift-NEW"]
-        layout_after = NOCReportAssistant._scan_layout(ws_after)
+        layout_after = ShiftReport._scan_layout(ws_after)
 
         # Permalinks should have shifted down by 1
         assert layout_after.permalinks_row == permalinks_before + 1
@@ -643,7 +643,7 @@ class TestAddRow:
         """File should reopen cleanly after add_row."""
         mock_jira("DSSD-29999", "Open", "Unassigned", summary="Test")
 
-        assistant = NOCReportAssistant(
+        assistant = ShiftReport(
             jira_url="https://jira.example.com",
             jira_token="fake",
         )

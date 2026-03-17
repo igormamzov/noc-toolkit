@@ -7,14 +7,14 @@ import pytest
 
 # Make tool modules importable
 TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
-sys.path.insert(0, str(TOOLS_DIR / "noc-report-assistant"))
+sys.path.insert(0, str(TOOLS_DIR / "shift-report"))
 sys.path.insert(0, str(TOOLS_DIR / "pd-escalate"))
-sys.path.insert(0, str(TOOLS_DIR / "data-freshness"))
+sys.path.insert(0, str(TOOLS_DIR / "freshness"))
 sys.path.insert(0, str(TOOLS_DIR / "pd-merge"))
-sys.path.insert(0, str(TOOLS_DIR / "pagerduty-job-extractor"))
-sys.path.insert(0, str(TOOLS_DIR / "pd-jira-tool"))
+sys.path.insert(0, str(TOOLS_DIR / "pd-jobs"))
+sys.path.insert(0, str(TOOLS_DIR / "pd-sync"))
 sys.path.insert(0, str(TOOLS_DIR / "pd-monitor"))
-sys.path.insert(0, str(TOOLS_DIR / "pd-resolver"))
+sys.path.insert(0, str(TOOLS_DIR / "pd-resolve"))
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +371,7 @@ def report_dec31(tmp_path):
 @pytest.fixture
 def mock_jira(monkeypatch):
     """Mock _jira_get to return controlled responses without network calls."""
-    from noc_report_assistant import NOCReportAssistant
+    from shift_report import ShiftReport
 
     _responses = {}
 
@@ -390,6 +390,6 @@ def mock_jira(monkeypatch):
                 return response
         return None
 
-    monkeypatch.setattr(NOCReportAssistant, "_jira_get", mock_get)
+    monkeypatch.setattr(ShiftReport, "_jira_get", mock_get)
 
     return set_response

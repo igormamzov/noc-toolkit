@@ -25,7 +25,7 @@ except ImportError:
     sys.exit(1)
 
 
-class PagerDutyJobExtractor:
+class PDJobs:
     """Extracts job names from PagerDuty incident alerts."""
 
     # Regex pattern to match job names starting with jb_
@@ -184,7 +184,7 @@ def main() -> None:
 
     # Create extractor instance and run
     try:
-        extractor = PagerDutyJobExtractor(pagerduty_api_token=pagerduty_api_token)
+        extractor = PDJobs(pagerduty_api_token=pagerduty_api_token)
         jobs = extractor.get_jobs_from_incident(incident_id)
     except pagerduty.Error as error:
         print(f"Error: Failed to fetch incident data: {error}", file=sys.stderr)

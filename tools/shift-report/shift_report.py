@@ -102,7 +102,7 @@ class RowSnapshot:
 # ---------------------------------------------------------------------------
 # Main class
 # ---------------------------------------------------------------------------
-class NOCReportAssistant:
+class ShiftReport:
     """Reads an End-of-Shift Excel report, fetches Jira statuses, and updates cells."""
 
     def __init__(
@@ -908,7 +908,7 @@ def main() -> None:
     action = select_action()
     print()
 
-    assistant = NOCReportAssistant(jira_url, jira_token, args.dry_run, args.verbose)
+    assistant = ShiftReport(jira_url, jira_token, args.dry_run, args.verbose)
 
     if action == 1:
         # Start shift

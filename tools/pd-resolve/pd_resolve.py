@@ -127,7 +127,7 @@ def extract_incident_id(incident_input: str) -> str:
     return incident_input.strip()
 
 
-class PDResolver:
+class PDResolve:
     """Resolves PD Airflow incidents where subsequent DAG runs succeeded."""
 
     def __init__(
@@ -934,7 +934,7 @@ def main() -> None:
     aws_profile = os.environ.get('AWS_PROFILE')
 
     try:
-        resolver = PDResolver(
+        resolver = PDResolve(
             pagerduty_api_token=pagerduty_api_token,
             jira_server_url=jira_server_url,
             jira_personal_access_token=jira_personal_access_token,

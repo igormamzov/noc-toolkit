@@ -613,7 +613,7 @@ def _html_escape(text: str) -> str:
 # Main checker
 # ---------------------------------------------------------------------------
 
-class DataFreshnessChecker:
+class FreshnessChecker:
     """Runs the DACSCAN freshness report and optional granular checks."""
 
     def __init__(self, databricks_client: DatabricksSQL, verbose: bool = False) -> None:
@@ -925,7 +925,7 @@ def main() -> None:
         warehouse_id=warehouse_id,
         verbose=args.verbose,
     )
-    checker = DataFreshnessChecker(databricks_client, verbose=args.verbose)
+    checker = FreshnessChecker(databricks_client, verbose=args.verbose)
 
     # Step 1: Run main report
     try:

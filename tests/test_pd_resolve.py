@@ -6,8 +6,8 @@ from typing import Any, Dict, List, Optional
 import pytest
 
 # Must be importable via conftest.py sys.path setup
-from pd_resolver import (
-    PDResolver,
+from pd_resolve import (
+    PDResolve,
     AirflowRun,
     ResolveResult,
     extract_incident_id,
@@ -29,14 +29,14 @@ from pd_resolver import (
 
 
 # ---------------------------------------------------------------------------
-# Helpers: build mock PDResolver without real API clients
+# Helpers: build mock PDResolve without real API clients
 # ---------------------------------------------------------------------------
 
-def _make_resolver(dry_run: bool = False, no_confirm: bool = True) -> PDResolver:
-    """Create a PDResolver with mocked PD, Jira, and boto3 clients."""
-    with patch("pd_resolver.pagerduty.RestApiV2Client"), \
-         patch("pd_resolver.JIRA"):
-        resolver = PDResolver(
+def _make_resolver(dry_run: bool = False, no_confirm: bool = True) -> PDResolve:
+    """Create a PDResolve with mocked PD, Jira, and boto3 clients."""
+    with patch("pd_resolve.pagerduty.RestApiV2Client"), \
+         patch("pd_resolve.JIRA"):
+        resolver = PDResolve(
             pagerduty_api_token="fake-pd-token",
             jira_server_url="https://jira.example.com",
             jira_personal_access_token="fake-jira-token",
@@ -176,84 +176,84 @@ class TestAlertPatterns:
 
 
 class TestClassifyAlert:
-    """Test PDResolver.classify_alert() static method."""
+    """Test PDResolve.classify_alert() static method."""
 
     def test_consecutive_failures(self):
         title = "[CRITICAL] [AIRFLOW] AirFlow DAG discovery-event has failed consecutively"
-        assert PDResolver.classify_alert(title) == "consecutive_failures"
+        assert PDResolve.classify_alert(title) == "consecutive_failures"
 
     def test_batch_delayed(self):
         title = "batch_job_delayed_flag: some_dag"
-        assert PDResolver.classify_alert(title) == "batch_delayed"
+        assert PDResolve.classify_alert(title) == "batch_delayed"
 
     def test_unknown(self):
-        assert PDResolver.classify_alert("Something else entirely") == "unknown"
+        assert PDResolve.classify_alert("Something else entirely") == "unknown"
 
 
 class TestExtractDagName:
-    """Test PDResolver.extract_dag_name() static method."""
+    """Test PDResolve.extract_dag_name() static method."""
 
     def test_standard_title(self):
         title = "[CRITICAL] [AIRFLOW] AirFlow DAG discovery-event has failed consecutively"
-        assert PDResolver.extract_dag_name(title) == "discovery-event"
+        assert PDResolve.extract_dag_name(title) == "discovery-event"
 
     def test_no_dag_name(self):
-        assert PDResolver.extract_dag_name("No DAG here") is None
+        assert PDResolve.extract_dag_name("No DAG here") is None
 
     def test_complex_dag_name(self):
         title = "DAG etl_sfdc_daily_load has failed"
-        assert PDResolver.extract_dag_name(title) == "etl_sfdc_daily_load"
+        assert PDResolve.extract_dag_name(title) == "etl_sfdc_daily_load"
 
 
 class TestEvaluateRecovery:
-    """Test PDResolver.evaluate_recovery() static method."""
+    """Test PDResolve.evaluate_recovery() static method."""
 
     def test_all_success(self):
         runs = _make_airflow_runs(15, all_success=True)
-        assert PDResolver.evaluate_recovery(runs) is True
+        assert PDResolve.evaluate_recovery(runs) is True
 
     def test_latest_two_success_with_older_failures(self):
         """Oldest runs failed but latest 2 succeeded — recovered."""
         runs = _make_airflow_runs(15, all_success=False, failed_indices=[5, 10])
-        assert PDResolver.evaluate_recovery(runs) is True
+        assert PDResolve.evaluate_recovery(runs) is True
 
     def test_latest_run_failed(self):
         """Most recent run failed — not recovered."""
         runs = _make_airflow_runs(15, all_success=False, failed_indices=[0])
-        assert PDResolver.evaluate_recovery(runs) is False
+        assert PDResolve.evaluate_recovery(runs) is False
 
     def test_second_latest_run_failed(self):
         """Second most recent run failed — not recovered."""
         runs = _make_airflow_runs(15, all_success=False, failed_indices=[1])
-        assert PDResolver.evaluate_recovery(runs) is False
+        assert PDResolve.evaluate_recovery(runs) is False
 
     def test_both_latest_failed(self):
         runs = _make_airflow_runs(15, all_success=False, failed_indices=[0, 1])
-        assert PDResolver.evaluate_recovery(runs) is False
+        assert PDResolve.evaluate_recovery(runs) is False
 
     def test_empty_runs(self):
-        assert PDResolver.evaluate_recovery([]) is False
+        assert PDResolve.evaluate_recovery([]) is False
 
     def test_single_run_not_enough(self):
         """One successful run is below min_consecutive=2 threshold."""
         runs = _make_airflow_runs(1, all_success=True)
-        assert PDResolver.evaluate_recovery(runs) is False
+        assert PDResolve.evaluate_recovery(runs) is False
 
     def test_single_failure(self):
         runs = _make_airflow_runs(1, all_success=False, failed_indices=[0])
-        assert PDResolver.evaluate_recovery(runs) is False
+        assert PDResolve.evaluate_recovery(runs) is False
 
     def test_exactly_two_successes(self):
         """Exactly 2 successful runs — meets the threshold."""
         runs = _make_airflow_runs(2, all_success=True)
-        assert PDResolver.evaluate_recovery(runs) is True
+        assert PDResolve.evaluate_recovery(runs) is True
 
     def test_custom_min_consecutive(self):
         """Custom min_consecutive=3 requires 3 latest successes."""
         runs = _make_airflow_runs(5, all_success=False, failed_indices=[3])
-        assert PDResolver.evaluate_recovery(runs, min_consecutive=3) is True
+        assert PDResolve.evaluate_recovery(runs, min_consecutive=3) is True
         runs_bad = _make_airflow_runs(5, all_success=False, failed_indices=[2])
-        assert PDResolver.evaluate_recovery(runs_bad, min_consecutive=3) is False
+        assert PDResolve.evaluate_recovery(runs_bad, min_consecutive=3) is False
 
 
 # ===========================================================================
@@ -262,7 +262,7 @@ class TestEvaluateRecovery:
 
 
 class TestFetchIncident:
-    """Test PDResolver.fetch_incident()."""
+    """Test PDResolve.fetch_incident()."""
 
     def test_with_drgn_in_external_refs(self):
         resolver = _make_resolver()
@@ -303,7 +303,7 @@ class TestFetchIncident:
 
 
 class TestFindDrgnFromNotes:
-    """Test PDResolver.find_drgn_from_notes()."""
+    """Test PDResolve.find_drgn_from_notes()."""
 
     def test_found_in_notes(self):
         resolver = _make_resolver()
@@ -333,7 +333,7 @@ class TestFindDrgnFromNotes:
 
 
 class TestResolvePdIncident:
-    """Test PDResolver.resolve_pd_incident()."""
+    """Test PDResolve.resolve_pd_incident()."""
 
     def test_normal_mode(self):
         resolver = _make_resolver(dry_run=False)
@@ -378,7 +378,7 @@ class TestResolvePdIncident:
 
 
 class TestGetAirflowSession:
-    """Test PDResolver.get_airflow_session()."""
+    """Test PDResolve.get_airflow_session()."""
 
     def test_creates_session(self):
         resolver = _make_resolver()
@@ -390,8 +390,8 @@ class TestGetAirflowSession:
         mock_boto_session = MagicMock()
         mock_boto_session.client.return_value = mock_mwaa_client
 
-        with patch("pd_resolver.boto3.Session", return_value=mock_boto_session), \
-             patch("pd_resolver.requests.Session") as mock_session_cls:
+        with patch("pd_resolve.boto3.Session", return_value=mock_boto_session), \
+             patch("pd_resolve.requests.Session") as mock_session_cls:
             mock_session = MagicMock()
             mock_session.post.return_value = MagicMock(status_code=200)
             mock_session.post.return_value.raise_for_status = MagicMock()
@@ -407,13 +407,13 @@ class TestGetAirflowSession:
 
     def test_boto_error_raises(self):
         resolver = _make_resolver()
-        with patch("pd_resolver.boto3.Session", side_effect=Exception("no creds")):
+        with patch("pd_resolve.boto3.Session", side_effect=Exception("no creds")):
             with pytest.raises(RuntimeError, match="Failed to create Airflow session"):
                 resolver.get_airflow_session()
 
 
 class TestCheckAirflowRuns:
-    """Test PDResolver.check_airflow_runs()."""
+    """Test PDResolve.check_airflow_runs()."""
 
     def test_returns_runs(self):
         resolver = _make_resolver()
@@ -480,7 +480,7 @@ class TestCheckAirflowRuns:
 
 
 class TestGetDrgnStatus:
-    """Test PDResolver.get_drgn_status()."""
+    """Test PDResolve.get_drgn_status()."""
 
     def test_returns_status(self):
         resolver = _make_resolver()
@@ -499,7 +499,7 @@ class TestGetDrgnStatus:
 
 
 class TestCloseDrgn:
-    """Test PDResolver.close_drgn()."""
+    """Test PDResolve.close_drgn()."""
 
     def test_normal_mode_with_runbook(self):
         resolver = _make_resolver(dry_run=False)
@@ -564,7 +564,7 @@ class TestCloseDrgn:
 
 
 class TestFindRunbook:
-    """Test PDResolver.find_runbook()."""
+    """Test PDResolve.find_runbook()."""
 
     def test_found(self):
         resolver = _make_resolver()
@@ -574,7 +574,7 @@ class TestFindRunbook:
             "results": [{"id": "370419580", "title": "Runbook - discovery-event"}],
         }
 
-        with patch("pd_resolver.requests.get", return_value=mock_response):
+        with patch("pd_resolve.requests.get", return_value=mock_response):
             url = resolver.find_runbook("discovery-event")
 
         assert url is not None
@@ -586,12 +586,12 @@ class TestFindRunbook:
         mock_response.status_code = 200
         mock_response.json.return_value = {"results": []}
 
-        with patch("pd_resolver.requests.get", return_value=mock_response):
+        with patch("pd_resolve.requests.get", return_value=mock_response):
             assert resolver.find_runbook("nonexistent_dag") is None
 
     def test_api_error_returns_none(self):
         resolver = _make_resolver()
-        with patch("pd_resolver.requests.get", side_effect=Exception("connection error")):
+        with patch("pd_resolve.requests.get", side_effect=Exception("connection error")):
             assert resolver.find_runbook("some_dag") is None
 
     def test_non_200_returns_none(self):
@@ -599,7 +599,7 @@ class TestFindRunbook:
         mock_response = MagicMock()
         mock_response.status_code = 403
 
-        with patch("pd_resolver.requests.get", return_value=mock_response):
+        with patch("pd_resolve.requests.get", return_value=mock_response):
             assert resolver.find_runbook("some_dag") is None
 
 
@@ -609,67 +609,67 @@ class TestFindRunbook:
 
 
 class TestPromptSlaViolation:
-    """Test PDResolver.prompt_sla_violation()."""
+    """Test PDResolve.prompt_sla_violation()."""
 
     def test_yes(self):
         with patch("builtins.input", return_value="1"):
-            assert PDResolver.prompt_sla_violation() == SLA_VIOLATION_YES
+            assert PDResolve.prompt_sla_violation() == SLA_VIOLATION_YES
 
     def test_no(self):
         with patch("builtins.input", return_value="2"):
-            assert PDResolver.prompt_sla_violation() == SLA_VIOLATION_NO
+            assert PDResolve.prompt_sla_violation() == SLA_VIOLATION_NO
 
     def test_unknown(self):
         with patch("builtins.input", return_value="3"):
-            assert PDResolver.prompt_sla_violation() == SLA_VIOLATION_UNKNOWN
+            assert PDResolve.prompt_sla_violation() == SLA_VIOLATION_UNKNOWN
 
     def test_invalid_then_valid(self):
         with patch("builtins.input", side_effect=["x", "4", "2"]):
-            assert PDResolver.prompt_sla_violation() == SLA_VIOLATION_NO
+            assert PDResolve.prompt_sla_violation() == SLA_VIOLATION_NO
 
 
 class TestPromptComment:
-    """Test PDResolver.prompt_comment()."""
+    """Test PDResolve.prompt_comment()."""
 
     def test_preset_1(self):
         with patch("builtins.input", return_value="1"):
-            assert PDResolver.prompt_comment() == COMMENT_PRESETS[0]
+            assert PDResolve.prompt_comment() == COMMENT_PRESETS[0]
 
     def test_preset_4(self):
         with patch("builtins.input", return_value="4"):
-            assert PDResolver.prompt_comment() == COMMENT_PRESETS[3]
+            assert PDResolve.prompt_comment() == COMMENT_PRESETS[3]
 
     def test_custom(self):
         with patch("builtins.input", side_effect=["5", "My custom comment"]):
-            assert PDResolver.prompt_comment() == "My custom comment"
+            assert PDResolve.prompt_comment() == "My custom comment"
 
     def test_custom_empty_then_valid(self):
         with patch("builtins.input", side_effect=["5", "", "5", "Valid comment"]):
-            assert PDResolver.prompt_comment() == "Valid comment"
+            assert PDResolve.prompt_comment() == "Valid comment"
 
     def test_invalid_then_valid(self):
         with patch("builtins.input", side_effect=["99", "1"]):
-            assert PDResolver.prompt_comment() == COMMENT_PRESETS[0]
+            assert PDResolve.prompt_comment() == COMMENT_PRESETS[0]
 
 
 class TestPromptDrgnKey:
-    """Test PDResolver.prompt_drgn_key()."""
+    """Test PDResolve.prompt_drgn_key()."""
 
     def test_valid_drgn(self):
         with patch("builtins.input", return_value="DRGN-15254"):
-            assert PDResolver.prompt_drgn_key() == "DRGN-15254"
+            assert PDResolve.prompt_drgn_key() == "DRGN-15254"
 
     def test_lowercase_converted(self):
         with patch("builtins.input", return_value="drgn-15254"):
-            assert PDResolver.prompt_drgn_key() == "DRGN-15254"
+            assert PDResolve.prompt_drgn_key() == "DRGN-15254"
 
     def test_empty_returns_none(self):
         with patch("builtins.input", return_value=""):
-            assert PDResolver.prompt_drgn_key() is None
+            assert PDResolve.prompt_drgn_key() is None
 
     def test_invalid_prefix_returns_none(self):
         with patch("builtins.input", return_value="DSSD-123"):
-            assert PDResolver.prompt_drgn_key() is None
+            assert PDResolve.prompt_drgn_key() is None
 
 
 # ===========================================================================
@@ -748,11 +748,11 @@ class TestAirflowRun:
 
 
 class TestResolveWorkflow:
-    """Test PDResolver.resolve() orchestrator."""
+    """Test PDResolve.resolve() orchestrator."""
 
     def _setup_full_mocks(
         self,
-        resolver: PDResolver,
+        resolver: PDResolve,
         drgn_in_refs: bool = False,
         all_runs_success: bool = True,
         drgn_status: str = "Open",
@@ -886,7 +886,7 @@ class TestResolveWorkflow:
 
         with patch.object(resolver, "get_airflow_session", return_value=mock_session), \
              patch.object(resolver, "find_runbook", return_value=None), \
-             patch.object(PDResolver, "prompt_drgn_key", return_value=None):
+             patch.object(PDResolve, "prompt_drgn_key", return_value=None):
             result = resolver.resolve("Q1HR5H5BXCILO3")
 
         assert result.drgn_key is None
@@ -902,8 +902,8 @@ class TestResolveWorkflow:
 
         with patch.object(resolver, "get_airflow_session", return_value=mock_session), \
              patch.object(resolver, "find_runbook", return_value="https://example.com/runbook"), \
-             patch.object(PDResolver, "prompt_sla_violation", return_value=SLA_VIOLATION_NO), \
-             patch.object(PDResolver, "prompt_comment", return_value="test comment"), \
+             patch.object(PDResolve, "prompt_sla_violation", return_value=SLA_VIOLATION_NO), \
+             patch.object(PDResolve, "prompt_comment", return_value="test comment"), \
              patch("builtins.input", return_value="n"):
             result = resolver.resolve("Q1HR5H5BXCILO3")
 

@@ -1,22 +1,22 @@
-"""Tests for pagerduty-job-extractor (extract_jobs.py)."""
+"""Tests for pagerduty-job-extractor (pd_jobs.py)."""
 
 import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from extract_jobs import PagerDutyJobExtractor, extract_incident_id
+from pd_jobs import PDJobs, extract_incident_id
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_extractor() -> PagerDutyJobExtractor:
+def _make_extractor() -> PDJobs:
     """Create extractor with a mocked PagerDuty client."""
-    with patch("extract_jobs.pagerduty") as mock_pd:
+    with patch("pd_jobs.pagerduty") as mock_pd:
         mock_pd.RestApiV2Client.return_value = MagicMock()
-        extractor = PagerDutyJobExtractor(pagerduty_api_token="test-token")
+        extractor = PDJobs(pagerduty_api_token="test-token")
     return extractor
 
 
@@ -293,7 +293,7 @@ class TestJobPattern:
 # ===========================================================================
 
 class TestMain:
-    @patch("extract_jobs.PagerDutyJobExtractor")
+    @patch("pd_jobs.PDJobs")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
     def test_successful_run(self, mock_cls, capsys):
         """main() prints jobs to stdout."""
@@ -301,15 +301,15 @@ class TestMain:
         mock_instance.get_jobs_from_incident.return_value = ["jb_one", "jb_two"]
         mock_cls.return_value = mock_instance
 
-        with patch("sys.argv", ["extract_jobs.py", "P123"]):
-            from extract_jobs import main
+        with patch("sys.argv", ["pd_jobs.py", "P123"]):
+            from pd_jobs import main
             main()
 
         captured = capsys.readouterr()
         assert "jb_one" in captured.out
         assert "jb_two" in captured.out
 
-    @patch("extract_jobs.PagerDutyJobExtractor")
+    @patch("pd_jobs.PDJobs")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
     def test_no_jobs_exits(self, mock_cls):
         """main() exits with code 1 when no jobs found."""
@@ -317,8 +317,8 @@ class TestMain:
         mock_instance.get_jobs_from_incident.return_value = []
         mock_cls.return_value = mock_instance
 
-        with patch("sys.argv", ["extract_jobs.py", "P123"]):
-            from extract_jobs import main
+        with patch("sys.argv", ["pd_jobs.py", "P123"]):
+            from pd_jobs import main
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
@@ -326,33 +326,33 @@ class TestMain:
     @patch.dict("os.environ", {}, clear=True)
     def test_missing_token_exits(self):
         """main() exits when PAGERDUTY_API_TOKEN is not set."""
-        with patch("sys.argv", ["extract_jobs.py", "P123"]):
-            with patch("extract_jobs.load_dotenv"):
-                from extract_jobs import main
+        with patch("sys.argv", ["pd_jobs.py", "P123"]):
+            with patch("pd_jobs.load_dotenv"):
+                from pd_jobs import main
                 with pytest.raises(SystemExit) as exc_info:
                     main()
                 assert exc_info.value.code == 1
 
     def test_no_args_exits(self):
         """main() exits when no incident ID is provided."""
-        with patch("sys.argv", ["extract_jobs.py"]):
+        with patch("sys.argv", ["pd_jobs.py"]):
             with patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"}):
-                from extract_jobs import main
+                from pd_jobs import main
                 with pytest.raises(SystemExit) as exc_info:
                     main()
                 assert exc_info.value.code == 1
 
     def test_url_argument(self):
         """main() correctly parses URL argument."""
-        with patch("extract_jobs.PagerDutyJobExtractor") as mock_cls:
+        with patch("pd_jobs.PDJobs") as mock_cls:
             mock_instance = MagicMock()
             mock_instance.get_jobs_from_incident.return_value = ["jb_test"]
             mock_cls.return_value = mock_instance
 
             with patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"}):
                 url = "https://co.pagerduty.com/incidents/PXYZ123"
-                with patch("sys.argv", ["extract_jobs.py", url]):
-                    from extract_jobs import main
+                with patch("sys.argv", ["pd_jobs.py", url]):
+                    from pd_jobs import main
                     main()
 
             mock_instance.get_jobs_from_incident.assert_called_once_with("PXYZ123")
