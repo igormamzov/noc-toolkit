@@ -825,6 +825,8 @@ def main() -> None:
     )
     parser.add_argument(
         'incident',
+        nargs='?',
+        default=None,
         help='PagerDuty incident URL or ID',
     )
     parser.add_argument(
@@ -849,6 +851,17 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    # Interactive prompt when launched from toolkit menu (no args)
+    if not args.incident:
+        try:
+            args.incident = input("PagerDuty incident URL or ID: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nAborted.")
+            sys.exit(130)
+        if not args.incident:
+            print("Error: incident is required.", file=sys.stderr)
+            sys.exit(1)
 
     # Validate environment
     pagerduty_api_token = os.environ.get('PAGERDUTY_API_TOKEN')
