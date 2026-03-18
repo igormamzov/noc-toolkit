@@ -33,8 +33,8 @@ All components are currently in **0.x.x** version, indicating active development
 | **pd-escalate**            | 0.1.1   | Development   | Post-DSSD escalation workflow automation       |
 | **freshness**         | 0.1.1   | Development   | Data freshness report via Databricks SQL|
 | **shift-report**   | 0.1.6   | Development   | Shift report with Jira sync (Google Sheets / Excel)|
-| **gsheet_report**          | 0.1.0   | Development   | Google Sheets adapter for NOC Report Assistant   |
-| **pd-resolve**            | 0.1.1   | Development   | Auto-resolve recovered Airflow incidents|
+| **gsheet_report**          | 0.1.1   | Development   | Google Sheets adapter for shift report             |
+| **pd-resolve**            | 0.1.2   | Development   | Auto-resolve recovered Airflow incidents|
 
 ---
 
@@ -66,6 +66,19 @@ print(f"Version: {VERSION}")
 ---
 
 ## Version History
+
+### pd-resolve v0.1.2 (2026-03-17)
+
+**Bug fix: recovery check logic:**
+- Changed recovery criteria from "all 15 runs successful" to "last 2 consecutive runs successful"
+- Prevents false negatives when old failures exist but DAG has clearly recovered
+
+### gsheet_report v0.1.1 (2026-03-17)
+
+**Formatting fixes for startShift and addRow:**
+- startShift: merge A:B for "from previous shifts" section with vertical align middle
+- startShift: set text wrap on ticket data rows (C:F) so long text is not clipped
+- addRow: set text wrap on newly inserted row (C:F)
 
 ### gsheet_report v0.1.0 (2026-03-16)
 

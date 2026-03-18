@@ -502,6 +502,15 @@ noc-toolkit/
 
 ## 🔄 Version History
 
+### pd-resolve v0.1.2 (2026-03-17)
+
+- ✅ **Bug fix:** Recovery check now requires last 2 consecutive successes instead of all 15
+
+### gsheet_report v0.1.1 (2026-03-17)
+
+- ✅ **Fix:** Merge A:B for "from previous shifts" section with vertical align middle
+- ✅ **Fix:** Text wrap on ticket data (C:F) in startShift and addRow
+
 ### gsheet_report v0.1.0 (2026-03-16)
 
 - ✅ **New:** Google Sheets adapter for Shift Report via Apps Script Web App

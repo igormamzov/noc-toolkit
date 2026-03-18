@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 # Version information
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 
 # Suppress pagination warnings from pagerduty package
 warnings.filterwarnings('ignore', message='.*lacks a "more" property.*')

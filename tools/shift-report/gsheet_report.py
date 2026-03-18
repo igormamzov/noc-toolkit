@@ -25,7 +25,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 SHEETS = ["Night-Shift-NEW", "Day-Shift-NEW"]
 TICKET_REGEX = re.compile(r"([A-Z]+-\d+)")
