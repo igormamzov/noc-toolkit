@@ -177,6 +177,17 @@ function _doSync(ws, updates) {
       count++;
     }
   }
+
+  // Ensure text wrap on all ticket rows (C:F)
+  var layout = _getLayout(ws);
+  var startRow = layout.fromPrevRow;
+  var endRow = (layout.permalinksRow || ws.getLastRow()) - 1;
+  var numRows = endRow - startRow + 1;
+  if (numRows > 0) {
+    ws.getRange(startRow, 3, numRows, 4)
+      .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+  }
+
   SpreadsheetApp.flush();
   return { ok: true, updated: count };
 }
