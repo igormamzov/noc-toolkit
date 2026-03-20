@@ -35,6 +35,7 @@ All components are currently in **0.x.x** version, indicating active development
 | **shift-report**   | 0.1.6   | Development   | Shift report with Jira sync (Google Sheets / Excel)|
 | **gsheet_report**          | 0.1.1   | Development   | Google Sheets adapter for shift report             |
 | **pd-resolve**            | 0.1.2   | Development   | Auto-resolve recovered Airflow incidents|
+| **ticket-watch**          | 0.1.0   | Development   | Monitor escalation tickets for unassigned/stale states|
 
 ---
 
@@ -66,6 +67,19 @@ print(f"Version: {VERSION}")
 ---
 
 ## Version History
+
+### ticket-watch v0.1.0 (2026-03-20)
+
+**Initial release — escalation ticket monitor:**
+- JQL search for DSSD tickets by reporter list (configurable via `TICKET_WATCH_REPORTERS`)
+- Flags unassigned tickets older than 4 hours (configurable via `TICKET_WATCH_UNASSIGNED_HOURS`)
+- Pings assignees on stale tickets with no comment for 3+ days (configurable via `TICKET_WATCH_STALE_DAYS`)
+- Detects repeat pings and shows last assignee response (truncated to 70 chars)
+- 11 randomized ping phrases for comment variety
+- `--dry-run` mode: preview without posting comments
+- `--no-comment` mode: report only, skip all Jira comments
+- `--project` flag: support for any Jira project (default: DSSD)
+- 45 unit tests added (pytest)
 
 ### pd-resolve v0.1.2 (2026-03-17)
 
@@ -430,5 +444,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-03-17
+**Last Updated:** 2026-03-20
 **Maintained by:** NOC Team

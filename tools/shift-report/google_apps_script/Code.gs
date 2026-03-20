@@ -186,6 +186,10 @@ function _doSync(ws, updates) {
   if (numRows > 0) {
     ws.getRange(startRow, 3, numRows, 4)
       .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+    // Auto-resize rows so wrapped text is visible
+    for (var r = startRow; r < startRow + numRows; r++) {
+      ws.autoResizeRows(r, 1);
+    }
   }
 
   SpreadsheetApp.flush();
@@ -239,8 +243,9 @@ function _doAddRow(ws, data) {
     ws.getRange(targetRow, 6).setRichTextValue(richF);
   }
 
-  // Set text wrap on the new row (C:F)
+  // Set text wrap on the new row (C:F) and auto-resize
   ws.getRange(targetRow, 3, 1, 4).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+  ws.autoResizeRows(targetRow, 1);
 
   SpreadsheetApp.flush();
   return { ok: true, insertedRow: targetRow };
@@ -349,6 +354,10 @@ function _doStartShift(ss, targetSheetName) {
     // Set text wrap on ticket data (C:F) so long text is not clipped
     var dataRange = targetWs.getRange(fpStart, 3, fpCount, 4);
     dataRange.setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+    // Auto-resize rows so wrapped text is visible
+    for (var r = fpStart; r < fpStart + fpCount; r++) {
+      targetWs.autoResizeRows(r, 1);
+    }
   }
 
   // 9. Clear TTM section (keep one empty row)

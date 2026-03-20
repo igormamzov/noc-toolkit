@@ -346,6 +346,13 @@ class NOCToolkit:
                 script_path="tools/pd-resolve/pd_resolve.py",
                 enabled=True
             ),
+            ToolDefinition(
+                tool_id="ticket-watch",
+                name="Ticket Watch",
+                description="Monitor escalation tickets for unassigned/stale states",
+                script_path="tools/ticket-watch/ticket_watch.py",
+                enabled=True
+            ),
         ]
 
     def get_enabled_tools(self) -> List[ToolDefinition]:

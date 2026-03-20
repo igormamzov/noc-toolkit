@@ -15,6 +15,7 @@ sys.path.insert(0, str(TOOLS_DIR / "pd-jobs"))
 sys.path.insert(0, str(TOOLS_DIR / "pd-sync"))
 sys.path.insert(0, str(TOOLS_DIR / "pd-monitor"))
 sys.path.insert(0, str(TOOLS_DIR / "pd-resolve"))
+sys.path.insert(0, str(TOOLS_DIR / "ticket-watch"))
 
 
 # ---------------------------------------------------------------------------

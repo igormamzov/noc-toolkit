@@ -367,6 +367,27 @@ python3 tools/pd-resolve/pd_resolve.py               # Live run
 - `--dry-run, -n` — Simulate without API mutations
 - `--verbose, -v` — Show extra debug output
 
+### 9. Ticket Watch (`ticket-watch`)
+
+Monitors Jira escalation tickets for unassigned and stale states:
+
+- **Unassigned detection** — Flags tickets without assignee after 4+ hours
+- **Stale ticket ping** — Posts a comment pinging assignees when no update for 3+ days
+- **Repeat ping tracking** — Detects previous pings, shows last assignee response
+- **Configurable** — Project, reporters, thresholds all via env vars
+
+**Quick setup:**
+```bash
+python3 tools/ticket-watch/ticket_watch.py --dry-run      # Preview
+python3 tools/ticket-watch/ticket_watch.py                 # Live run
+python3 tools/ticket-watch/ticket_watch.py --no-comment    # Report only
+```
+
+**CLI options:**
+- `--dry-run, -d` — Preview without posting comments
+- `--no-comment` — Report only, skip Jira comments
+- `--project, -p` — Jira project key (default: DSSD)
+
 ---
 
 ## 🔐 Security
@@ -489,7 +510,8 @@ noc-toolkit/
 │   ├── freshness/        # Data freshness report
 │   ├── shift-report/  # Shift report (Google Sheets / Excel)
 │   ├── pd-escalate/           # Post-DSSD escalation workflow
-│   └── pd-resolve/           # Auto-resolve recovered incidents
+│   ├── pd-resolve/           # Auto-resolve recovered incidents
+│   └── ticket-watch/         # Monitor escalation tickets
 ├── config/                     # Configuration files
 ├── docs/                       # Documentation
 │   ├── PROJECT_DOCS.md        # Architecture docs
@@ -501,6 +523,15 @@ noc-toolkit/
 ---
 
 ## 🔄 Version History
+
+### ticket-watch v0.1.0 (2026-03-20)
+
+- ✅ **New tool:** Monitor escalation tickets for unassigned/stale states
+- ✅ JQL search by configurable reporter list and project
+- ✅ Ping assignees on stale tickets (3+ days without comment)
+- ✅ Repeat ping detection with last assignee response
+- ✅ `--dry-run`, `--no-comment`, `--project` CLI options
+- ✅ 45 unit tests added (pytest)
 
 ### pd-resolve v0.1.2 (2026-03-17)
 
