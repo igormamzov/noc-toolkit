@@ -18,9 +18,8 @@ from typing import Any, Dict, List, Optional
 VERSION = "0.1.0"
 
 try:
-    from jira import JIRA
     from jira.exceptions import JIRAError
-    from dotenv import load_dotenv
+    from noc_utils import load_env, require_env, new_jira_client
 except ImportError as import_error:
     print(f"Error: Missing required dependencies. Please run: pip install -r requirements.txt")
     print(f"Details: {import_error}")
@@ -80,10 +79,8 @@ class TicketWatch:
         self.reporters = reporters
         self.unassigned_hours = unassigned_hours
         self.stale_days = stale_days
-        self.jira_base_url = jira_server_url.rstrip("/") + "/browse"
-        self.jira_client = JIRA(
-            server=jira_server_url,
-            token_auth=jira_personal_access_token,
+        self.jira_client, self.jira_base_url = new_jira_client(
+            jira_server_url, jira_personal_access_token,
         )
         # Resolve current user for detecting our own comments
         self.current_user: Optional[str] = None
@@ -522,12 +519,7 @@ def main() -> None:
     """Main entry point for the CLI tool."""
     import argparse
 
-    load_dotenv()
-
-    # Also check parent .env (for noc-toolkit layout)
-    parent_env = os.path.join(os.path.dirname(__file__), '..', '..', '.env')
-    if os.path.exists(parent_env):
-        load_dotenv(dotenv_path=parent_env)
+    load_env()
 
     parser = argparse.ArgumentParser(
         description="Ticket Watch — Monitor escalation tickets for unassigned/stale states",
@@ -568,27 +560,10 @@ def main() -> None:
     args = parser.parse_args()
 
     # Validate environment
-    jira_server_url = os.environ.get('JIRA_SERVER_URL')
-    jira_personal_access_token = os.environ.get('JIRA_PERSONAL_ACCESS_TOKEN')
-
-    missing_vars: List[str] = []
-    if not jira_server_url:
-        missing_vars.append('JIRA_SERVER_URL')
-    if not jira_personal_access_token:
-        missing_vars.append('JIRA_PERSONAL_ACCESS_TOKEN')
-
-    reporters_raw = os.environ.get('TICKET_WATCH_REPORTERS', '')
-    if not reporters_raw:
-        missing_vars.append('TICKET_WATCH_REPORTERS')
-
-    if missing_vars:
-        print(f"Error: Missing required environment variables: {', '.join(missing_vars)}", file=sys.stderr)
-        print("\nPlease set these in your environment or .env file.", file=sys.stderr)
-        print("See .env.example for the required format.", file=sys.stderr)
-        sys.exit(1)
+    env = require_env('JIRA_SERVER_URL', 'JIRA_PERSONAL_ACCESS_TOKEN', 'TICKET_WATCH_REPORTERS')
 
     # Parse reporters — comma-separated, strip whitespace
-    reporters = [name.strip() for name in reporters_raw.split(",") if name.strip()]
+    reporters = [name.strip() for name in env['TICKET_WATCH_REPORTERS'].split(",") if name.strip()]
 
     # Parse optional thresholds from env
     unassigned_hours = float(os.environ.get('TICKET_WATCH_UNASSIGNED_HOURS', '4'))
@@ -596,8 +571,8 @@ def main() -> None:
 
     try:
         tool = TicketWatch(
-            jira_server_url=jira_server_url,
-            jira_personal_access_token=jira_personal_access_token,
+            jira_server_url=env['JIRA_SERVER_URL'],
+            jira_personal_access_token=env['JIRA_PERSONAL_ACCESS_TOKEN'],
             reporters=reporters,
             project=args.project,
             unassigned_hours=unassigned_hours,

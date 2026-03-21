@@ -16,7 +16,6 @@ import json
 import os
 import re
 import sys
-import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,12 +28,9 @@ VERSION = "0.2.4"
 # so they don't reappear on subsequent runs.
 SKIP_FILE = Path(__file__).parent / ".pd_merge_skips.json"
 
-# Suppress pagination warnings from pagerduty package
-warnings.filterwarnings('ignore', message='.*lacks a "more" property.*')
-
 try:
     import pagerduty
-    from dotenv import load_dotenv
+    from noc_utils import load_env, require_env, new_pd_client, parse_iso_dt as _parse_iso_dt
 except ImportError as import_error:
     print(f"Error: Missing required dependencies. Please run: pip install -r requirements.txt")
     print(f"Details: {import_error}")
@@ -42,8 +38,8 @@ except ImportError as import_error:
 
 # Optional Jira import — only needed for Scenario B
 try:
-    from jira import JIRA
     from jira.exceptions import JIRAError
+    from noc_utils import new_jira_client
     JIRA_AVAILABLE = True
 except ImportError:
     JIRA_AVAILABLE = False
@@ -124,10 +120,6 @@ ALERT_TYPE_LABELS: Dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def _parse_iso_dt(iso_str: str) -> datetime:
-    """Parse an ISO 8601 datetime string (with optional trailing 'Z') into a timezone-aware datetime."""
-    return datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
-
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -203,7 +195,7 @@ class PagerDutyMergeTool:
             dry_run: If True, simulate merges without API changes
             verbose: If True, show extra debug output
         """
-        self.pd_client = pagerduty.RestApiV2Client(pagerduty_api_token)
+        self.pd_client = new_pd_client(pagerduty_api_token)
         self.dry_run = dry_run
         self.verbose = verbose
         self.user_id: Optional[str] = None
@@ -212,10 +204,7 @@ class PagerDutyMergeTool:
         self.skipped_ids: Set[str] = self.load_skipped_ids()
 
         if JIRA_AVAILABLE and jira_server_url and jira_personal_access_token:
-            self.jira_client = JIRA(
-                server=jira_server_url,
-                token_auth=jira_personal_access_token,
-            )
+            self.jira_client, _ = new_jira_client(jira_server_url, jira_personal_access_token)
 
     # ------------------------------------------------------------------
     # Logging
@@ -1475,15 +1464,11 @@ class PagerDutyMergeTool:
 
 def main() -> None:
     """Entry point for the PagerDuty Incident Merge Tool."""
-    load_dotenv()
+    load_env()
 
-    pagerduty_api_token = os.environ.get('PAGERDUTY_API_TOKEN')
+    env = require_env('PAGERDUTY_API_TOKEN')
     jira_server_url = os.environ.get('JIRA_SERVER_URL')
     jira_personal_access_token = os.environ.get('JIRA_PERSONAL_ACCESS_TOKEN')
-
-    if not pagerduty_api_token:
-        print("Error: PAGERDUTY_API_TOKEN not set. Check your .env file.")
-        sys.exit(1)
 
     # Parse CLI arguments
     dry_run = False
@@ -1559,9 +1544,9 @@ def main() -> None:
 
     try:
         tool = PagerDutyMergeTool(
-            pagerduty_api_token=pagerduty_api_token,
+            pagerduty_api_token=env['PAGERDUTY_API_TOKEN'],
             jira_server_url=jira_server_url,
-            jira_personal_access_token=jira_personal_access_token,
+            jira_personal_access_token=jira_personal_access_token or '',
             dry_run=dry_run,
             verbose=verbose,
         )

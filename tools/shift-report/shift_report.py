@@ -18,9 +18,9 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 try:
-    from dotenv import load_dotenv
+    from noc_utils import load_env
 except ImportError:
-    def load_dotenv() -> None:
+    def load_env() -> None:
         pass
 
 try:
@@ -870,7 +870,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     """Entry point."""
-    load_dotenv()
+    load_env()
     args = parse_args()
 
     # Required env vars

@@ -12,20 +12,15 @@ Automates the post-DSSD-creation escalation workflow:
 import os
 import re
 import sys
-import warnings
 from typing import Any, Dict, Optional
 
 # Version information
 VERSION = "0.1.1"
 
-# Suppress pagination warnings from pagerduty package
-warnings.filterwarnings('ignore', message='.*lacks a "more" property.*')
-
 try:
     import pagerduty
-    from jira import JIRA
     from jira.exceptions import JIRAError
-    from dotenv import load_dotenv
+    from noc_utils import load_env, require_env, new_pd_client, new_jira_client
 except ImportError as import_error:
     print(f"Error: Missing required dependencies. Please run: pip install -r requirements.txt")
     print(f"Details: {import_error}")
@@ -73,11 +68,9 @@ class EscalateTool:
             dry_run: If True, simulate without API mutations
         """
         self.dry_run = dry_run
-        self.jira_base_url = jira_server_url.rstrip("/") + "/browse"
-        self.pd_client = pagerduty.RestApiV2Client(pagerduty_api_token)
-        self.jira_client = JIRA(
-            server=jira_server_url,
-            token_auth=jira_personal_access_token,
+        self.pd_client = new_pd_client(pagerduty_api_token)
+        self.jira_client, self.jira_base_url = new_jira_client(
+            jira_server_url, jira_personal_access_token,
         )
         self.user_email: str = ""
         self.user_id: str = ""
@@ -398,12 +391,7 @@ def main() -> None:
     """Main entry point for the CLI tool."""
     import argparse
 
-    load_dotenv()
-
-    # Also check parent .env (for noc-toolkit layout)
-    parent_env = os.path.join(os.path.dirname(__file__), '..', '..', '.env')
-    if os.path.exists(parent_env):
-        load_dotenv(dotenv_path=parent_env)
+    load_env()
 
     parser = argparse.ArgumentParser(
         description="PD Escalation Tool — Link DRGN→DSSD, transition to Escalated, post PD note",
@@ -444,23 +432,7 @@ def main() -> None:
     args = parser.parse_args()
 
     # Validate environment
-    pagerduty_api_token = os.environ.get('PAGERDUTY_API_TOKEN')
-    jira_server_url = os.environ.get('JIRA_SERVER_URL')
-    jira_personal_access_token = os.environ.get('JIRA_PERSONAL_ACCESS_TOKEN')
-
-    missing_vars = []
-    if not pagerduty_api_token:
-        missing_vars.append('PAGERDUTY_API_TOKEN')
-    if not jira_server_url:
-        missing_vars.append('JIRA_SERVER_URL')
-    if not jira_personal_access_token:
-        missing_vars.append('JIRA_PERSONAL_ACCESS_TOKEN')
-
-    if missing_vars:
-        print(f"Error: Missing required environment variables: {', '.join(missing_vars)}", file=sys.stderr)
-        print("\nPlease set these in your environment or .env file.", file=sys.stderr)
-        print("See .env.example for the required format.", file=sys.stderr)
-        sys.exit(1)
+    env = require_env('PAGERDUTY_API_TOKEN', 'JIRA_SERVER_URL', 'JIRA_PERSONAL_ACCESS_TOKEN')
 
     # Parse incident ID
     incident_id = extract_incident_id(args.pd)
@@ -475,9 +447,9 @@ def main() -> None:
 
     try:
         tool = EscalateTool(
-            pagerduty_api_token=pagerduty_api_token,
-            jira_server_url=jira_server_url,
-            jira_personal_access_token=jira_personal_access_token,
+            pagerduty_api_token=env['PAGERDUTY_API_TOKEN'],
+            jira_server_url=env['JIRA_SERVER_URL'],
+            jira_personal_access_token=env['JIRA_PERSONAL_ACCESS_TOKEN'],
             dry_run=args.dry_run,
         )
         tool.run(

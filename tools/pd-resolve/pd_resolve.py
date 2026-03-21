@@ -16,23 +16,18 @@ DAG runs succeeded:
 import os
 import re
 import sys
-import warnings
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 # Version information
 VERSION = "0.1.2"
 
-# Suppress pagination warnings from pagerduty package
-warnings.filterwarnings('ignore', message='.*lacks a "more" property.*')
-
 try:
     import pagerduty
     import requests
     import boto3
-    from jira import JIRA
     from jira.exceptions import JIRAError
-    from dotenv import load_dotenv
+    from noc_utils import load_env, require_env, new_pd_client, new_jira_client
 except ImportError as import_error:
     print(f"Error: Missing required dependencies. Please run: pip install -r requirements.txt")
     print(f"Details: {import_error}")
@@ -167,11 +162,8 @@ class PDResolve:
         self.mwaa_region = mwaa_region
         self.aws_profile = aws_profile or self._detect_aws_profile()
 
-        self.pd_client = pagerduty.RestApiV2Client(pagerduty_api_token)
-        self.jira_client = JIRA(
-            server=jira_server_url,
-            token_auth=jira_personal_access_token,
-        )
+        self.pd_client = new_pd_client(pagerduty_api_token)
+        self.jira_client, _ = new_jira_client(jira_server_url, jira_personal_access_token)
 
     # ------------------------------------------------------------------
     # PagerDuty methods
@@ -848,12 +840,7 @@ def main() -> None:
     """Main entry point for the CLI tool."""
     import argparse
 
-    load_dotenv()
-
-    # Also check parent .env (for noc-toolkit layout)
-    parent_env = os.path.join(os.path.dirname(__file__), '..', '..', '.env')
-    if os.path.exists(parent_env):
-        load_dotenv(dotenv_path=parent_env)
+    load_env()
 
     parser = argparse.ArgumentParser(
         description="PD Resolver -- Auto-resolve PD incidents where Airflow jobs recovered",
@@ -906,27 +893,8 @@ def main() -> None:
             sys.exit(1)
 
     # Validate environment
-    pagerduty_api_token = os.environ.get('PAGERDUTY_API_TOKEN')
-    jira_server_url = os.environ.get('JIRA_SERVER_URL')
-    jira_personal_access_token = os.environ.get('JIRA_PERSONAL_ACCESS_TOKEN')
+    env = require_env('PAGERDUTY_API_TOKEN', 'JIRA_SERVER_URL', 'JIRA_PERSONAL_ACCESS_TOKEN')
     jira_email = os.environ.get('JIRA_EMAIL', '')
-
-    missing_vars: List[str] = []
-    if not pagerduty_api_token:
-        missing_vars.append('PAGERDUTY_API_TOKEN')
-    if not jira_server_url:
-        missing_vars.append('JIRA_SERVER_URL')
-    if not jira_personal_access_token:
-        missing_vars.append('JIRA_PERSONAL_ACCESS_TOKEN')
-
-    if missing_vars:
-        print(
-            f"Error: Missing required environment variables: {', '.join(missing_vars)}",
-            file=sys.stderr,
-        )
-        print("\nPlease set these in your environment or .env file.", file=sys.stderr)
-        print("See .env.example for the required format.", file=sys.stderr)
-        sys.exit(1)
 
     # MWAA config from env or defaults
     mwaa_env_name = os.environ.get('MWAA_ENVIRONMENT_NAME', 'prd2612-prod-airflow')
@@ -935,9 +903,9 @@ def main() -> None:
 
     try:
         resolver = PDResolve(
-            pagerduty_api_token=pagerduty_api_token,
-            jira_server_url=jira_server_url,
-            jira_personal_access_token=jira_personal_access_token,
+            pagerduty_api_token=env['PAGERDUTY_API_TOKEN'],
+            jira_server_url=env['JIRA_SERVER_URL'],
+            jira_personal_access_token=env['JIRA_PERSONAL_ACCESS_TOKEN'],
             jira_email=jira_email,
             mwaa_env_name=mwaa_env_name,
             mwaa_region=mwaa_region,

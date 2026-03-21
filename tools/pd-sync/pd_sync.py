@@ -9,31 +9,22 @@ Supports read-only mode, update mode with snooze, and interactive menu.
 import os
 import re
 import sys
-import warnings
 from typing import List, Optional, Dict, Any, TextIO
 from datetime import datetime, timedelta, timezone
 
 # Version information
 VERSION = "0.3.2"
 
-# Suppress pagination warnings from pagerduty package
-warnings.filterwarnings('ignore', message='.*lacks a "more" property.*')
-
 try:
     import pagerduty
     from jira import JIRA
     from jira.exceptions import JIRAError
-    from dotenv import load_dotenv
     from tqdm import tqdm
+    from noc_utils import load_env, require_env, new_pd_client, parse_iso_dt as _parse_iso_dt
 except ImportError as import_error:
     print(f"Error: Missing required dependencies. Please run: pip install -r requirements.txt")
     print(f"Details: {import_error}")
     sys.exit(1)
-
-
-def _parse_iso_dt(iso_str: str) -> datetime:
-    """Parse an ISO 8601 datetime string (with optional trailing 'Z') into a timezone-aware datetime."""
-    return datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
 
 
 class PDSync:
@@ -69,7 +60,7 @@ class PDSync:
             jira_personal_access_token: Jira Server/Data Center PAT (optional)
             quiet_mode: If True, suppress detailed processing output (default: False)
         """
-        self.pagerduty_session = pagerduty.RestApiV2Client(pagerduty_api_token)
+        self.pagerduty_session = new_pd_client(pagerduty_api_token)
         self.quiet_mode = quiet_mode
 
         # Determine authentication method based on provided credentials
@@ -856,29 +847,15 @@ def show_interactive_menu() -> Dict[str, Any]:
 
 def main() -> None:
     """Main entry point for the CLI tool."""
-    # Load environment variables from .env file if present
-    load_dotenv()
+    load_env()
 
-    # Get credentials from environment variables
-    pagerduty_api_token = os.environ.get('PAGERDUTY_API_TOKEN')
-    jira_server_url = os.environ.get('JIRA_SERVER_URL')
+    # Validate core env vars
+    env = require_env('PAGERDUTY_API_TOKEN', 'JIRA_SERVER_URL')
+    pagerduty_api_token = env['PAGERDUTY_API_TOKEN']
+    jira_server_url = env['JIRA_SERVER_URL']
     jira_email = os.environ.get('JIRA_EMAIL')
     jira_api_token = os.environ.get('JIRA_API_TOKEN')
     jira_personal_access_token = os.environ.get('JIRA_PERSONAL_ACCESS_TOKEN')
-
-    # Validate PagerDuty credentials
-    if not pagerduty_api_token:
-        print("Error: Missing required environment variable: PAGERDUTY_API_TOKEN")
-        print("\nPlease set this in your environment or create a .env file.")
-        print("See .env.example for the required format.")
-        sys.exit(1)
-
-    # Validate Jira credentials
-    if not jira_server_url:
-        print("Error: Missing required environment variable: JIRA_SERVER_URL")
-        print("\nPlease set this in your environment or create a .env file.")
-        print("See .env.example for the required format.")
-        sys.exit(1)
 
     # Check for valid Jira authentication method
     has_personal_access_token = bool(jira_personal_access_token)

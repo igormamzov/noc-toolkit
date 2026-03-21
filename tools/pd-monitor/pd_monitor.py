@@ -11,12 +11,12 @@ import sys
 import json
 import argparse
 import random
-import warnings
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Set
-from dotenv import load_dotenv
+
+from noc_utils import load_env, new_pd_client
 
 # Version information
 VERSION = "0.1.4"
@@ -66,9 +66,6 @@ COMMENTS_TYPO = [
 
 ALL_COMMENTS = COMMENTS_NORMAL + COMMENTS_TYPO
 
-# Suppress pagination warnings from pagerduty package
-warnings.filterwarnings('ignore', message='.*lacks a "more" property.*')
-
 try:
     import pagerduty
 except ImportError:
@@ -103,7 +100,7 @@ class PagerDutyMonitor:
             details: If True, show detailed check information
             background: If True, suppress interactive prompts and progress bar
         """
-        self.pagerduty_session = pagerduty.RestApiV2Client(pagerduty_api_token)
+        self.pagerduty_session = new_pd_client(pagerduty_api_token)
         self.comment_pattern = comment_pattern
         self.random_comments = (comment_pattern.lower() == "working on it")
         self.check_interval_seconds = check_interval_seconds
@@ -852,7 +849,7 @@ def show_duration_menu() -> int:
 def main() -> None:
     """Main entry point."""
     # Load environment variables
-    load_dotenv()
+    load_env()
 
     # Parse arguments
     args = parse_args()

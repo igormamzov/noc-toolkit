@@ -15,8 +15,8 @@ from pd_escalate import EscalateTool, extract_incident_id, DRGN_PATTERN
 
 def _make_tool(dry_run: bool = False) -> EscalateTool:
     """Create an EscalateTool with mocked PD and Jira clients."""
-    with patch("pd_escalate.pagerduty.RestApiV2Client"), \
-         patch("pd_escalate.JIRA"):
+    with patch("noc_utils._pagerduty.RestApiV2Client"), \
+         patch("noc_utils.JIRA"):
         tool = EscalateTool(
             pagerduty_api_token="fake-pd-token",
             jira_server_url="https://jira.example.com",

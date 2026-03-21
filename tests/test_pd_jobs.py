@@ -14,7 +14,7 @@ from pd_jobs import PDJobs, extract_incident_id
 
 def _make_extractor() -> PDJobs:
     """Create extractor with a mocked PagerDuty client."""
-    with patch("pd_jobs.pagerduty") as mock_pd:
+    with patch("noc_utils._pagerduty") as mock_pd:
         mock_pd.RestApiV2Client.return_value = MagicMock()
         extractor = PDJobs(pagerduty_api_token="test-token")
     return extractor
@@ -327,7 +327,7 @@ class TestMain:
     def test_missing_token_exits(self):
         """main() exits when PAGERDUTY_API_TOKEN is not set."""
         with patch("sys.argv", ["pd_jobs.py", "P123"]):
-            with patch("pd_jobs.load_dotenv"):
+            with patch("pd_jobs.load_env"):
                 from pd_jobs import main
                 with pytest.raises(SystemExit) as exc_info:
                     main()

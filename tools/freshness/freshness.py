@@ -32,9 +32,9 @@ except ImportError:
     sys.exit(1)
 
 try:
-    from dotenv import load_dotenv
+    from noc_utils import load_env
 except ImportError:
-    print("Error: Missing 'python-dotenv' library. Run: pip install -r requirements.txt", file=sys.stderr)
+    print("Error: Missing noc_utils. Ensure tools/common/ is on Python path.", file=sys.stderr)
     sys.exit(1)
 
 VERSION = "0.1.1"
@@ -880,7 +880,7 @@ Examples:
 
 def main() -> None:
     """Main entry point."""
-    load_dotenv()
+    load_env()
     args = parse_args()
 
     print()

@@ -34,8 +34,8 @@ from pd_resolve import (
 
 def _make_resolver(dry_run: bool = False, no_confirm: bool = True) -> PDResolve:
     """Create a PDResolve with mocked PD, Jira, and boto3 clients."""
-    with patch("pd_resolve.pagerduty.RestApiV2Client"), \
-         patch("pd_resolve.JIRA"):
+    with patch("noc_utils._pagerduty.RestApiV2Client"), \
+         patch("noc_utils.JIRA"):
         resolver = PDResolve(
             pagerduty_api_token="fake-pd-token",
             jira_server_url="https://jira.example.com",

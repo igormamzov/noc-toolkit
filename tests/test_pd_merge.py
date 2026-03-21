@@ -25,7 +25,7 @@ from pd_merge import (
 
 def _make_tool(dry_run: bool = True, verbose: bool = False) -> PagerDutyMergeTool:
     """Create a PagerDutyMergeTool with a mocked PD client."""
-    with patch("pd_merge.pagerduty") as mock_pd:
+    with patch("noc_utils._pagerduty") as mock_pd:
         mock_pd.RestApiV2Client.return_value = MagicMock()
         tool = PagerDutyMergeTool(
             pagerduty_api_token="test-token",

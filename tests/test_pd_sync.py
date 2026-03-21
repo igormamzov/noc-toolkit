@@ -16,7 +16,7 @@ from pd_sync import PDSync, _parse_iso_dt, save_summary_to_file
 
 def _make_tool(quiet_mode: bool = False) -> PDSync:
     """Create tool with mocked PagerDuty and Jira clients."""
-    with patch("pd_sync.pagerduty") as mock_pd, \
+    with patch("noc_utils._pagerduty") as mock_pd, \
          patch("pd_sync.JIRA") as mock_jira:
         mock_pd.RestApiV2Client.return_value = MagicMock()
         mock_jira.return_value = MagicMock()
@@ -110,7 +110,7 @@ class TestInit:
 
     def test_cloud_auth(self):
         """Email + API token auth creates tool without error."""
-        with patch("pd_sync.pagerduty") as mock_pd, \
+        with patch("noc_utils._pagerduty") as mock_pd, \
              patch("pd_sync.JIRA") as mock_jira:
             mock_pd.RestApiV2Client.return_value = MagicMock()
             mock_jira.return_value = MagicMock()
@@ -124,7 +124,7 @@ class TestInit:
 
     def test_missing_credentials_raises(self):
         """No Jira creds raises ValueError."""
-        with patch("pd_sync.pagerduty") as mock_pd:
+        with patch("noc_utils._pagerduty") as mock_pd:
             mock_pd.RestApiV2Client.return_value = MagicMock()
             with pytest.raises(ValueError, match="Invalid Jira credentials"):
                 PDSync(
@@ -859,7 +859,7 @@ class TestMain:
     @patch.dict("os.environ", {}, clear=True)
     def test_missing_pd_token_exits(self):
         with patch("sys.argv", ["prog", "--check"]):
-            with patch("pd_sync.load_dotenv"):
+            with patch("pd_sync.load_env"):
                 from pd_sync import main
                 with pytest.raises(SystemExit) as exc_info:
                     main()
@@ -870,7 +870,7 @@ class TestMain:
     }, clear=True)
     def test_missing_jira_url_exits(self):
         with patch("sys.argv", ["prog", "--check"]):
-            with patch("pd_sync.load_dotenv"):
+            with patch("pd_sync.load_env"):
                 from pd_sync import main
                 with pytest.raises(SystemExit) as exc_info:
                     main()
@@ -882,7 +882,7 @@ class TestMain:
     }, clear=True)
     def test_missing_jira_creds_exits(self):
         with patch("sys.argv", ["prog", "--check"]):
-            with patch("pd_sync.load_dotenv"):
+            with patch("pd_sync.load_env"):
                 from pd_sync import main
                 with pytest.raises(SystemExit) as exc_info:
                     main()

@@ -24,6 +24,11 @@ Pillow>=10.0.0  # Image support (customtkinter dependency)
 # ------------------------
 openpyxl>=3.1.0  # Read/write Excel files for NOC Report Assistant
 
+# Testing
+# -------
+freezegun>=1.2.0  # Time-freezing for deterministic datetime tests
+mutmut>=2.5.0  # Mutation testing for test quality verification
+
 # Optional enhancements
 # ---------------------
 # colorama>=0.4.6  # Cross-platform colored terminal text (future enhancement)

@@ -8,15 +8,12 @@ Extracts failed job names (jb_* pattern) from PagerDuty incident alerts.
 import os
 import re
 import sys
-import warnings
 from typing import Any, Set, List
-from dotenv import load_dotenv
+
+from noc_utils import load_env, new_pd_client
 
 # Version information
 VERSION = "0.1.1"
-
-# Suppress pagination warnings from pagerduty package
-warnings.filterwarnings('ignore', message='.*lacks a "more" property.*')
 
 try:
     import pagerduty
@@ -38,7 +35,7 @@ class PDJobs:
         Args:
             pagerduty_api_token: PagerDuty API token
         """
-        self.pagerduty_session = pagerduty.RestApiV2Client(pagerduty_api_token)
+        self.pagerduty_session = new_pd_client(pagerduty_api_token)
 
     def extract_jobs_from_text(self, text: str) -> List[str]:
         """
@@ -153,18 +150,9 @@ def extract_incident_id(incident_input: str) -> str:
 
 def main() -> None:
     """Main entry point for the CLI tool."""
-    # Load environment variables from .env file if present
-    load_dotenv()
+    load_env()
 
-    # Check for .env in parent directory (pagerduty-jira-checker)
-    parent_env = os.path.join(os.path.dirname(__file__), '..', 'pagerduty-jira-checker', '.env')
-    if os.path.exists(parent_env):
-        load_dotenv(dotenv_path=parent_env)
-
-    # Get credentials from environment variables
     pagerduty_api_token = os.environ.get('PAGERDUTY_API_TOKEN')
-
-    # Validate PagerDuty credentials
     if not pagerduty_api_token:
         print("Error: Missing required environment variable: PAGERDUTY_API_TOKEN", file=sys.stderr)
         print("\nPlease set this in your environment or create a .env file.", file=sys.stderr)

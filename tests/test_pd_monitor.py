@@ -25,7 +25,7 @@ from pd_monitor import (
 
 def _make_monitor(**overrides) -> PagerDutyMonitor:
     """Create a PagerDutyMonitor with mocked PagerDuty client."""
-    with patch("pd_monitor.pagerduty") as mock_pd:
+    with patch("noc_utils._pagerduty") as mock_pd:
         mock_session = MagicMock()
         mock_pd.RestApiV2Client.return_value = mock_session
 
@@ -182,7 +182,7 @@ class TestGetUserEmail:
         assert monitor.user_email == "test@example.com"
 
     def test_missing_email_raises(self):
-        with patch("pd_monitor.pagerduty") as mock_pd:
+        with patch("noc_utils._pagerduty") as mock_pd:
             mock_session = MagicMock()
             mock_pd.RestApiV2Client.return_value = mock_session
             resp_user_id = MagicMock()
@@ -201,7 +201,7 @@ class TestGetCurrentUserId:
         assert monitor.user_id == "PUSER123"
 
     def test_missing_user_id_raises(self):
-        with patch("pd_monitor.pagerduty") as mock_pd:
+        with patch("noc_utils._pagerduty") as mock_pd:
             mock_session = MagicMock()
             mock_pd.RestApiV2Client.return_value = mock_session
             mock_response = MagicMock()
@@ -213,7 +213,7 @@ class TestGetCurrentUserId:
 
     def test_pd_error_propagates(self):
         import pagerduty as real_pd
-        with patch("pd_monitor.pagerduty") as mock_pd:
+        with patch("noc_utils._pagerduty") as mock_pd:
             mock_pd.Error = real_pd.Error
             mock_session = MagicMock()
             mock_pd.RestApiV2Client.return_value = mock_session
@@ -840,7 +840,7 @@ class TestMonitorContinuously:
 
 class TestMain:
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_dotenv")
+    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
     def test_once_mode(self, mock_dotenv, mock_cls):
         mock_instance = MagicMock()
@@ -858,7 +858,7 @@ class TestMain:
         mock_instance.check_incidents_once.assert_called_once()
 
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_dotenv")
+    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
     def test_duration_mode(self, mock_dotenv, mock_cls):
         mock_instance = MagicMock()
@@ -870,7 +870,7 @@ class TestMain:
 
         mock_instance.monitor_continuously.assert_called_once_with(duration_minutes=30)
 
-    @patch("pd_monitor.load_dotenv")
+    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {}, clear=True)
     def test_missing_token_exits(self, mock_dotenv):
         with patch("sys.argv", ["pd_monitor.py", "--once"]):
@@ -880,7 +880,7 @@ class TestMain:
             assert exc_info.value.code == 1
 
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_dotenv")
+    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
     def test_dry_run_flag(self, mock_dotenv, mock_cls):
         mock_instance = MagicMock()
@@ -900,7 +900,7 @@ class TestMain:
         assert call_kwargs["dry_run"] is True
 
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_dotenv")
+    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
     def test_background_default_duration(self, mock_dotenv, mock_cls):
         mock_instance = MagicMock()
@@ -913,7 +913,7 @@ class TestMain:
         mock_instance.monitor_continuously.assert_called_once_with(duration_minutes=60)
 
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_dotenv")
+    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
     def test_verbose_and_details_flags(self, mock_dotenv, mock_cls):
         mock_instance = MagicMock()
@@ -933,7 +933,7 @@ class TestMain:
         assert call_kwargs["details"] is True
 
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_dotenv")
+    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
     def test_pattern_override(self, mock_dotenv, mock_cls):
         mock_instance = MagicMock()
@@ -952,7 +952,7 @@ class TestMain:
         assert call_kwargs["comment_pattern"] == "my custom"
 
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_dotenv")
+    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
     def test_keyboard_interrupt_exits_130(self, mock_dotenv, mock_cls):
         mock_instance = MagicMock()
