@@ -25,7 +25,7 @@ All components are currently in **0.x.x** version, indicating active development
 
 | Component                  | Version | Status        | Description                                    |
 |----------------------------|---------|---------------|------------------------------------------------|
-| **noc-toolkit**            | 0.6.0   | Development   | Main toolkit launcher and orchestrator         |
+| **noc-toolkit**            | 0.6.1   | Development   | Main toolkit launcher and orchestrator         |
 | **pd-monitor**             | 0.1.4   | Development   | Auto-acknowledge triggered PagerDuty incidents |
 | **pd-sync**           | 0.3.2   | Development   | PagerDuty-Jira sync       |
 | **pd-jobs**| 0.1.1   | Development   | Extract job names from PD incidents     |
@@ -67,6 +67,16 @@ print(f"Version: {VERSION}")
 ---
 
 ## Version History
+
+### NOC Toolkit v0.6.1 (2026-03-21)
+
+**Refactor: shared utility module (noc_utils.py):**
+- New `tools/common/noc_utils.py` with `load_env()`, `require_env()`, `new_pd_client()`, `new_jira_client()`, `parse_iso_dt()` — eliminates duplicated code across all 10 tools
+- All tools migrated to import shared utilities instead of copy-pasting
+- Launcher updated: `PYTHONPATH` includes `tools/common/` for subprocess and in-process modes
+- Added mutation testing support: `mutmut` + `freezegun` in requirements.txt, `setup.cfg` config
+- ticket-watch tests expanded: 45 → 73 (boundary tests, constructor tests, main() tests)
+- Total tests: 712 (655 core + 57 gsheet), all passing
 
 ### ticket-watch v0.1.0 (2026-03-20)
 
@@ -444,5 +454,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-03-20
+**Last Updated:** 2026-03-21
 **Maintained by:** NOC Team

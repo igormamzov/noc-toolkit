@@ -40,12 +40,13 @@ except ImportError:
     _ENV_MESSAGE = "Warning: python-dotenv not installed (pip install python-dotenv)"
 
 # Version information
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 TOOLKIT_NAME = "NOC Toolkit"
 
 # Directory paths — tools are bundled inside _MEIPASS, config is next to EXE
 SCRIPT_DIR = Path(_MEIPASS) if _MEIPASS else Path(__file__).parent.resolve()
 TOOLS_DIR = SCRIPT_DIR / "tools"
+COMMON_DIR = TOOLS_DIR / "common"
 
 
 def _write_debug_log() -> None:
@@ -211,6 +212,10 @@ class MonitorBackground:
             '--background',
         ]
 
+        env = os.environ.copy()
+        extra = str(COMMON_DIR)
+        env["PYTHONPATH"] = extra + os.pathsep + env.get("PYTHONPATH", "")
+
         try:
             self._process = subprocess.Popen(
                 cmd,
@@ -220,6 +225,7 @@ class MonitorBackground:
                 text=True,
                 bufsize=1,
                 cwd=str(tool_path.parent),
+                env=env,
             )
         except FileNotFoundError as exc:
             print(f"  Error starting background monitor: {exc}")
@@ -468,6 +474,10 @@ class NOCToolkit:
                 _append_debug(f"Launching (in-process): {tool.name}\n  path: {tool_path}")
                 saved_argv = sys.argv
                 saved_cwd = os.getcwd()
+                # Ensure tools/common (noc_utils) is importable
+                common_str = str(COMMON_DIR)
+                if common_str not in sys.path:
+                    sys.path.insert(0, common_str)
                 try:
                     sys.argv = [str(tool_path)]
                     os.chdir(tool_path.parent)
@@ -491,8 +501,12 @@ class NOCToolkit:
                 # Running from source — use subprocess with Python interpreter
                 cmd = [sys.executable, str(tool_path)]
                 cwd = str(tool_path.parent)
+                env = os.environ.copy()
+                # Ensure tools/common (noc_utils) is importable
+                extra = str(COMMON_DIR)
+                env["PYTHONPATH"] = extra + os.pathsep + env.get("PYTHONPATH", "")
                 _append_debug(f"Launching (subprocess): {tool.name}\n  cmd: {cmd}\n  cwd: {cwd}")
-                result = subprocess.run(cmd, cwd=cwd)
+                result = subprocess.run(cmd, cwd=cwd, env=env)
                 _append_debug(f"Finished: {tool.name} → exit code {result.returncode}")
                 return result.returncode
         except KeyboardInterrupt:
