@@ -25,17 +25,18 @@ All components are currently in **0.x.x** version, indicating active development
 
 | Component                  | Version | Status        | Description                                    |
 |----------------------------|---------|---------------|------------------------------------------------|
-| **noc-toolkit**            | 0.6.1   | Development   | Main toolkit launcher and orchestrator         |
+| **noc-toolkit**            | 0.6.1   | Development   | Main toolkit launcher and orchestrator (CLI)   |
+| **noc-toolkit-gui**        | 0.1.0   | Development   | Desktop GUI with parallel execution (customtkinter) |
 | **pd-monitor**             | 0.1.4   | Development   | Auto-acknowledge triggered PagerDuty incidents |
-| **pd-sync**           | 0.3.2   | Development   | PagerDuty-Jira sync       |
-| **pd-jobs**| 0.1.1   | Development   | Extract job names from PD incidents     |
+| **pd-sync**                | 0.3.2   | Development   | PagerDuty-Jira sync                            |
+| **pd-jobs**                | 0.1.1   | Development   | Extract job names from PD incidents            |
 | **pd-merge**               | 0.2.4   | Development   | Find and merge related PD incidents by job name|
 | **pd-escalate**            | 0.1.1   | Development   | Post-DSSD escalation workflow automation       |
-| **freshness**         | 0.1.1   | Development   | Data freshness report via Databricks SQL|
-| **shift-report**   | 0.1.6   | Development   | Shift report with Jira sync (Google Sheets / Excel)|
-| **gsheet_report**          | 0.1.1   | Development   | Google Sheets adapter for shift report             |
-| **pd-resolve**            | 0.1.2   | Development   | Auto-resolve recovered Airflow incidents|
-| **ticket-watch**          | 0.1.0   | Development   | Monitor escalation tickets for unassigned/stale states|
+| **freshness**              | 0.1.1   | Development   | Data freshness report via Databricks SQL       |
+| **shift-report**           | 0.1.6   | Development   | Shift report with Jira sync (Google Sheets / Excel)|
+| **gsheet_report**          | 0.1.1   | Development   | Google Sheets adapter for shift report         |
+| **pd-resolve**             | 0.1.2   | Development   | Auto-resolve recovered Airflow incidents       |
+| **ticket-watch**           | 0.1.0   | Development   | Monitor escalation tickets for unassigned/stale states|
 
 ---
 
@@ -67,6 +68,26 @@ print(f"Version: {VERSION}")
 ---
 
 ## Version History
+
+### GUI v0.1.0 (2026-04-07)
+
+**New — Desktop GUI with parallel tool execution:**
+- Dark-themed customtkinter desktop application (`noc_toolkit_gui.py`, ~1660 lines)
+- Vertical sidebar tabs for 10 tools (replacing horizontal tab bar)
+- Parallel tool execution — run multiple tools simultaneously via per-tab subprocess management
+- `_TabState` dataclass tracks per-tab process, stdin pipe, log buffer, log file handle, and UI widgets
+- Master queue pattern: single `queue.Queue[Tuple[str, Optional[str]]]` shared by all reader threads, tagged with tool_id
+- Per-tool log files saved to `logs/<tool_id>_<timestamp>.log` with 5000-line in-memory buffer cap
+- Config panel accessible via header button (separate from tool tabs), reads/writes `config.yaml`
+- Per-tool Launch/Stop buttons with status indicator (Ready/Running/Stopped)
+- Draggable `tk.PanedWindow` splitter between parameter panel and console output
+- Interactive stdin input bar for tool prompts (routes to active tab's process)
+- Cross-platform mouse wheel/trackpad scrolling:
+  - macOS: `pyobjc-framework-Cocoa` NSEvent native monitor (workaround for Tk 9.0.3 regression)
+  - Linux: `<Button-4>`/`<Button-5>` bindings
+  - Windows: `<MouseWheel>` with `delta/120`
+- 91 unit tests (pytest) — mock-based without Tk display, covers all testable logic:
+  data structures, command building, config I/O, per-tab logging, process management, input routing
 
 ### NOC Toolkit v0.6.1 (2026-03-21)
 
@@ -454,5 +475,5 @@ When updating versions:
 
 ---
 
-**Last Updated:** 2026-03-21
+**Last Updated:** 2026-04-07
 **Maintained by:** NOC Team

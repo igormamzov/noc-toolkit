@@ -1,31 +1,42 @@
 # NOC Toolkit
 
-**Version:** 0.6.0
-**A unified command-line toolkit for NOC operations**
+**Version:** 0.6.1
+**A unified toolkit for NOC operations — CLI and GUI**
 
 ---
 
 ## 📖 Overview
 
-NOC Toolkit is a menu-driven command-line interface that provides easy access to various operational tools used by the NOC team. Instead of remembering multiple script locations and commands, simply launch the toolkit and select the tool you need from an interactive menu.
+NOC Toolkit provides easy access to various operational tools used by the NOC team. It offers two interfaces:
+
+- **CLI** (`noc-toolkit.py`) — menu-driven command-line interface
+- **GUI** (`noc_toolkit_gui.py`) — dark-themed desktop application with parallel tool execution, per-tool logs, and interactive parameter controls
+
+Instead of remembering multiple script locations and commands, simply launch the toolkit and select the tool you need.
 
 ---
 
 ## ✨ Features
 
-- 🎯 **Unified Interface** - Single entry point for all NOC tools
-- 📋 **Interactive Menu** - Easy-to-use menu-driven navigation
-- 🔧 **Multiple Tools** - Currently includes:
-  - **PD Sync** - Sync PagerDuty incidents with Jira
-  - **PD Jobs** - Extract job names from merged PagerDuty incidents
-  - **PD Monitor** - Monitor and auto-acknowledge triggered incidents
-  - **PD Merge** - Find and merge related incidents by job name
-  - **Freshness** - DACSCAN data freshness report via Databricks SQL
-  - **Shift Report** - Sync Jira statuses into shift report (Google Sheets / Excel)
-  - **PD Escalate** - Automate post-DSSD escalation workflow (link DRGN→DSSD, transition, PD note, Slack template)
-  - **PD Resolve** - Auto-resolve PD incidents where Airflow DAG runs recovered
-- 🚀 **Extensible** - Easy to add new tools
-- ✅ **Health Checks** - Automatically verifies tool availability
+- 🎯 **Unified Interface** — Single entry point for all NOC tools (CLI + GUI)
+- 🖥️ **Desktop GUI** — Dark-themed customtkinter app with vertical sidebar tabs
+- ⚡ **Parallel Execution** — Run multiple tools simultaneously in the GUI
+- 📋 **Interactive Menu** — Easy-to-use menu-driven CLI navigation
+- 📝 **Per-Tool Logs** — Each tool run saved to `logs/` with timestamps
+- 🔧 **10 Tools** — Currently includes:
+  - **PD Sync** — Sync PagerDuty incidents with Jira
+  - **PD Jobs** — Extract job names from merged PagerDuty incidents
+  - **PD Monitor** — Monitor and auto-acknowledge triggered incidents
+  - **PD Merge** — Find and merge related incidents by job name
+  - **Freshness** — DACSCAN data freshness report via Databricks SQL
+  - **Shift Report** — Sync Jira statuses into shift report (Google Sheets / Excel)
+  - **GSheet Report** — Google Sheets adapter for Shift Report
+  - **PD Escalate** — Automate post-DSSD escalation workflow
+  - **PD Resolve** — Auto-resolve PD incidents where Airflow DAG runs recovered
+  - **Ticket Watch** — Monitor escalation tickets for unassigned/stale states
+- 🚀 **Extensible** — Easy to add new tools
+- ✅ **Health Checks** — Automatically verifies tool availability
+- 🧪 **1275 Unit Tests** — 94% code coverage across all modules
 
 ---
 
@@ -33,14 +44,14 @@ NOC Toolkit is a menu-driven command-line interface that provides easy access to
 
 ### Prerequisites
 
-- Python 3.7 or higher
+- Python 3.10 or higher
 - pip (Python package manager)
 
 ### Installation
 
 1. **Clone or navigate to the toolkit directory:**
    ```bash
-   cd /Users/master/noc-toolkit
+   cd /path/to/noc-toolkit
    ```
 
 2. **Install dependencies:**
@@ -50,40 +61,77 @@ NOC Toolkit is a menu-driven command-line interface that provides easy access to
 
 3. **Configure environment variables:**
 
-   Each tool may require its own configuration. See the tool-specific documentation for details.
-
-   Example for PD Sync:
    ```bash
-   cd tools/pd-sync
-   cp .env.example .env
-   # Edit .env with your credentials
+   cp config.yaml.example config.yaml
+   # Edit config.yaml with your credentials
    ```
+
+   Or use `.env` file — see tool-specific docs for required variables.
 
 ### Usage
 
-Simply run the toolkit:
+**CLI mode** — interactive menu in terminal:
 
 ```bash
 python3 noc-toolkit.py
 ```
 
-Or make it executable and run directly:
+**GUI mode** — desktop application:
 
 ```bash
-chmod +x noc-toolkit.py
-./noc-toolkit.py
+python3 noc_toolkit_gui.py
+```
+
+> **Note:** GUI requires `customtkinter` and optionally `pyobjc-framework-Cocoa` (macOS) for smooth trackpad/mouse wheel scrolling. Both are included in `requirements.txt`.
+
+---
+
+## 🖥️ GUI Mode
+
+The GUI (`noc_toolkit_gui.py`) provides a modern dark-themed desktop interface built with customtkinter.
+
+### Key Features
+
+- **Vertical sidebar** — Tool tabs on the left side for quick navigation
+- **Per-tool parameters** — Each tool has its own parameter panel with checkboxes, radio buttons, and text entries
+- **Parallel execution** — Launch multiple tools simultaneously; each runs in its own subprocess
+- **Per-tool console** — Switch between tabs to see each tool's live output
+- **Per-tool log files** — Every run is saved to `logs/<tool_id>_<timestamp>.log`
+- **Config panel** — Accessible via header button; edit `config.yaml` values (API tokens, URLs, etc.)
+- **Draggable splitter** — Resize the parameter panel vs. console area
+- **Input bar** — Send text to a running tool's stdin (for interactive prompts)
+- **Cross-platform scrolling** — Native macOS scroll via pyobjc, Button-4/5 on Linux, MouseWheel on Windows
+
+### GUI Layout
+
+```
+┌──────────────────────────────────────────────────┐
+│  NOC Toolkit v0.6.1    [⚙ Config] [↻ Reload]    │
+├────────┬─────────────────────────────────────────┤
+│        │  ┌─ Parameters ───────────────────────┐ │
+│ PD-Jira│  │  ☑ --dry-run   ☐ --verbose         │ │
+│ Job Ext│  │  ◉ --snooze  ○ --update             │ │
+│ PD Mon │  │  [Launch ▶]  [Stop ■]  ● Ready      │ │
+│ PD Merg│  ├────────────────────────────── splitter│
+│ Freshns│  │  Console output here...              │ │
+│ NOC Rpt│  │  > Running pd-sync...                │ │
+│ GSheet │  │  > Found 12 incidents                │ │
+│ PD Esc │  │                                      │ │
+│ PD Res │  │  [input field___________] [Send]     │ │
+│ Tkt Wch│  │  [Clear Log]     Output: 42 lines    │ │
+└────────┴─────────────────────────────────────────┘
 ```
 
 ---
 
-## 🎮 Using the Toolkit
+## 🎮 Using the CLI
 
-When you launch the toolkit, you'll see an interactive menu:
+When you launch the CLI (`noc-toolkit.py`), you'll see an interactive menu:
 
 ```
 ╔════════════════════════════════════════════════════════╗
 ║                                                        ║
-║              NOC Toolkit v0.6.0║
+║              NOC Toolkit v0.6.1                        ║
 ║                                                        ║
 ║         Unified NOC Operations Toolkit                 ║
 ║                                                        ║
@@ -116,17 +164,21 @@ Available Tools:
   8. [✓] PD Resolve
       Auto-resolve PD incidents where Airflow jobs recovered
 
+  9. [✓] Ticket Watch
+      Monitor escalation tickets for unassigned/stale states
+
 --------------------------------------------------------
   0. Exit
 ========================================================
 
-Select tool [0-8]:
+Select tool [0-9]:
 ```
 
 ### Menu Navigation
 
 - Enter the **number** of the tool you want to run (e.g., `1` for PD Sync)
 - Enter **0** to exit the toolkit
+- Enter **gui** to launch the GUI from the CLI menu
 - Press **Ctrl+C** at any time to interrupt and return to the menu
 
 ### Tool Status Indicators
@@ -501,21 +553,30 @@ Want to add a new tool to the toolkit?
 
 ```
 noc-toolkit/
-├── noc-toolkit.py              # Main entry point
+├── noc-toolkit.py              # CLI entry point (menu-driven)
+├── noc_toolkit_gui.py          # GUI entry point (customtkinter)
+├── config.yaml                 # Shared configuration (API tokens, URLs)
+├── config.yaml.example         # Configuration template
 ├── tools/                      # All tools
-│   ├── pd-sync/          # PD-Jira sync
-│   ├── pd-jobs/  # Extract job names from PD
+│   ├── common/                # Shared utilities (noc_utils.py)
+│   ├── pd-sync/               # PD-Jira sync
+│   ├── pd-jobs/               # Extract job names from PD
 │   ├── pd-monitor/            # Auto-acknowledge monitor
 │   ├── pd-merge/              # Incident merge tool
-│   ├── freshness/        # Data freshness report
-│   ├── shift-report/  # Shift report (Google Sheets / Excel)
+│   ├── freshness/             # Data freshness report
+│   ├── shift-report/          # Shift report (Google Sheets / Excel)
 │   ├── pd-escalate/           # Post-DSSD escalation workflow
-│   ├── pd-resolve/           # Auto-resolve recovered incidents
-│   └── ticket-watch/         # Monitor escalation tickets
-├── config/                     # Configuration files
+│   ├── pd-resolve/            # Auto-resolve recovered incidents
+│   └── ticket-watch/          # Monitor escalation tickets
+├── tests/                      # Unit tests (1275 tests, 94% coverage)
+│   ├── test_noc_toolkit.py    # CLI launcher tests
+│   ├── test_noc_toolkit_gui.py # GUI logic tests (91 tests)
+│   └── test_*.py              # Per-tool test files
+├── logs/                       # Per-tool log files (gitignored)
 ├── docs/                       # Documentation
 │   ├── PROJECT_DOCS.md        # Architecture docs
 │   └── PLAN.md                # Development plan
+├── setup.cfg                   # pytest + coverage configuration
 ├── requirements.txt            # Python dependencies
 └── README.md                   # This file
 ```
@@ -523,6 +584,26 @@ noc-toolkit/
 ---
 
 ## 🔄 Version History
+
+### GUI v0.1.0 (2026-04-07)
+
+- ✅ **New:** Desktop GUI built with customtkinter (`noc_toolkit_gui.py`)
+- ✅ Dark-themed interface with vertical sidebar tabs (10 tools)
+- ✅ Parallel tool execution — run multiple tools simultaneously
+- ✅ Per-tool log files saved to `logs/` directory with timestamps
+- ✅ Per-tool Launch/Stop buttons and status indicators
+- ✅ Config panel accessible via header button (edit `config.yaml`)
+- ✅ Draggable PanedWindow splitter between parameters and console
+- ✅ Interactive stdin input bar for tool prompts
+- ✅ Cross-platform scroll: native macOS (pyobjc), Linux (Button-4/5), Windows (MouseWheel)
+- ✅ 91 unit tests added (pytest, mock-based without Tk display)
+
+### NOC Toolkit v0.6.1 (2026-03-21)
+
+- ✅ Refactored shared utilities into `tools/common/noc_utils.py`
+- ✅ All tools migrated to import shared `load_env()`, `require_env()`, `new_pd_client()`, `new_jira_client()`
+- ✅ Launcher updated: `PYTHONPATH` includes `tools/common/` for subprocess and in-process modes
+- ✅ Total tests: 1275 across all modules (94% coverage)
 
 ### ticket-watch v0.1.0 (2026-03-20)
 
@@ -695,12 +776,15 @@ For questions or issues:
 
 Planned features for future versions:
 
-- 🎨 Colored terminal output
-- 📊 Built-in logging system
-- ⚙️ Configuration wizard
-- 🔍 Tool search functionality
 - 📈 Usage statistics
-- 🔔 Notification integrations
+- 🔔 Notification integrations (Slack, email)
+- 🏗️ PyInstaller GUI build for Windows/macOS distribution
+
+**Completed:**
+- ~~🎨 Colored terminal output~~ → GUI with dark theme
+- ~~📊 Built-in logging system~~ → Per-tool log files in `logs/`
+- ~~⚙️ Configuration wizard~~ → GUI Config panel
+- ~~🔍 Tool search functionality~~ → GUI sidebar with all tools
 
 See [PLAN.md](docs/PLAN.md) for the complete roadmap.
 
