@@ -6,6 +6,7 @@ Unified tool for checking PagerDuty incidents and their associated Jira tickets.
 Supports read-only mode, update mode with snooze, and interactive menu.
 """
 
+import logging
 import os
 import re
 import sys
@@ -20,11 +21,14 @@ try:
     from jira import JIRA
     from jira.exceptions import JIRAError
     from tqdm import tqdm
-    from noc_utils import load_env, require_env, new_pd_client, parse_iso_dt as _parse_iso_dt
+    from noc_utils import require_env, new_pd_client, parse_iso_dt as _parse_iso_dt, setup_logging
 except ImportError as import_error:
-    print(f"Error: Missing required dependencies. Please run: pip install -r requirements.txt")
-    print(f"Details: {import_error}")
+    logging.basicConfig()
+    logging.error("Missing required dependencies. Please run: pip install -r requirements.txt")
+    logging.error("Details: %s", import_error)
     sys.exit(1)
+
+logger = setup_logging(name=__name__)
 
 
 class PDSync:
@@ -92,9 +96,9 @@ class PDSync:
         )
 
     def print_verbose(self, message: str) -> None:
-        """Print message only if not in quiet mode."""
+        """Log message at DEBUG level (suppressed in quiet mode via effective log level)."""
         if not self.quiet_mode:
-            print(message)
+            logger.debug(message)
 
     def get_current_user_id(self) -> str:
         """
@@ -395,19 +399,19 @@ class PDSync:
             Summary text suitable for display or saving to file
         """
         if user_id:
-            print("Fetching your open PagerDuty incidents...")
+            logger.info("Fetching your open PagerDuty incidents...")
         else:
-            print("Fetching open PagerDuty incidents...")
+            logger.info("Fetching open PagerDuty incidents...")
 
         incidents = self.get_open_incidents(user_id=user_id)
 
         if not incidents:
             summary = "\n✓ No open incidents found. You're all clear!"
-            print(summary)
+            logger.info(summary)
             return summary
 
-        print(f"\nFound {len(incidents)} open incident(s):\n")
-        print(f"{'='*80}")
+        logger.info(f"\nFound {len(incidents)} open incident(s):\n")
+        logger.info(f"{'='*80}")
 
         summary_lines = [
             f"\nОткрыто инцидентов: {len(incidents)}",
@@ -473,11 +477,11 @@ class PDSync:
                     no_comments = "   No comments yet\n"
                     output += no_comments
 
-            print(output.rstrip())
+            logger.info(output.rstrip())
 
-        print(f"\n{'='*80}")
+        logger.info(f"\n{'='*80}")
         summary_footer = f"\nTotal: {len(incidents)} open incident(s)"
-        print(summary_footer)
+        logger.info(summary_footer)
         summary_lines.append(f"\n{'='*80}")
         summary_lines.append(summary_footer)
 
@@ -503,24 +507,24 @@ class PDSync:
             Summary text suitable for display or saving to file
         """
         if user_id:
-            print(f"Processing your assigned open PagerDuty incidents...")
+            logger.info("Processing your assigned open PagerDuty incidents...")
         else:
-            print(f"Processing open PagerDuty incidents...")
+            logger.info("Processing open PagerDuty incidents...")
 
         incidents = self.get_open_incidents(user_id=user_id)
 
         if not incidents:
             summary = "\n✓ No open incidents found. You're all clear!"
-            print(summary)
+            logger.info(summary)
             return summary
 
         # Apply limit if specified
         total_incidents = len(incidents)
         if limit and limit < total_incidents:
             incidents = incidents[:limit]
-            print(f"Found {total_incidents} open incident(s). Processing first {limit} for testing...\n")
+            logger.info(f"Found {total_incidents} open incident(s). Processing first {limit} for testing...\n")
         else:
-            print(f"Found {len(incidents)} open incident(s). Processing...\n")
+            logger.info(f"Found {len(incidents)} open incident(s). Processing...\n")
 
         # Track incidents by category
         processed_and_snoozed = []
@@ -736,7 +740,7 @@ class PDSync:
         summary_lines.append(f"Total incidents processed: {len(incidents)}\n")
 
         summary_text = ''.join(summary_lines)
-        print(summary_text)
+        logger.info(summary_text)
 
         return summary_text
 
@@ -759,9 +763,9 @@ def save_summary_to_file(summary: str, filename: Optional[str] = None) -> None:
 
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(summary)
-        print(f"\n✓ Summary saved to: {filename}")
+        logger.info(f"\n✓ Summary saved to: {filename}")
     except IOError as error:
-        print(f"\n✗ Failed to save summary: {error}")
+        logger.error(f"\n✗ Failed to save summary: {error}")
 
 
 def show_interactive_menu() -> Dict[str, Any]:
@@ -771,26 +775,26 @@ def show_interactive_menu() -> Dict[str, Any]:
     Returns:
         Dictionary with user choices
     """
-    print("\n" + "="*80)
-    print("PagerDuty-Jira Integration Tool - Interactive Menu")
-    print("="*80)
+    logger.info("\n" + "="*80)
+    logger.info("PagerDuty-Jira Integration Tool - Interactive Menu")
+    logger.info("="*80)
 
     # Mode selection
-    print("\n1. Select mode:")
-    print("   [1] Check only (read-only)")
-    print("   [2] Update incidents (post comments)")
-    print("   [3] Update and snooze incidents")
+    logger.info("\n1. Select mode:")
+    logger.info("   [1] Check only (read-only)")
+    logger.info("   [2] Update incidents (post comments)")
+    logger.info("   [3] Update and snooze incidents")
 
     mode_choice = input("\nYour choice (1-3): ").strip()
 
     if mode_choice not in ['1', '2', '3']:
-        print("Invalid choice. Defaulting to check mode.")
+        logger.info("Invalid choice. Defaulting to check mode.")
         mode_choice = '1'
 
     # User filter
-    print("\n2. Filter by user:")
-    print("   [1] Only my incidents (default)")
-    print("   [2] All incidents")
+    logger.info("\n2. Filter by user:")
+    logger.info("   [1] Only my incidents (default)")
+    logger.info("   [2] All incidents")
 
     user_filter = input("\nYour choice (1-2): ").strip()
     skip_user_filter = (user_filter == '2')
@@ -809,7 +813,7 @@ def show_interactive_menu() -> Dict[str, Any]:
             try:
                 snooze_hours = float(snooze_input)
             except ValueError:
-                print("Invalid input. Using default 6 hours.")
+                logger.info("Invalid input. Using default 6 hours.")
 
     # Incident limit
     limit_input = input("\n4. Limit number of incidents to process (leave empty for all): ").strip()
@@ -818,7 +822,7 @@ def show_interactive_menu() -> Dict[str, Any]:
         try:
             incident_limit = int(limit_input)
         except ValueError:
-            print("Invalid input. Processing all incidents.")
+            logger.info("Invalid input. Processing all incidents.")
 
     # Details mode (for update/snooze, ask if want detailed output)
     show_details = True
@@ -847,8 +851,6 @@ def show_interactive_menu() -> Dict[str, Any]:
 
 def main() -> None:
     """Main entry point for the CLI tool."""
-    load_env()
-
     # Validate core env vars
     env = require_env('PAGERDUTY_API_TOKEN', 'JIRA_SERVER_URL')
     pagerduty_api_token = env['PAGERDUTY_API_TOKEN']
@@ -862,13 +864,13 @@ def main() -> None:
     has_cloud_credentials = bool(jira_email and jira_api_token)
 
     if not has_personal_access_token and not has_cloud_credentials:
-        print("Error: Missing Jira authentication credentials.")
-        print("\nFor Jira Server/Data Center, set:")
-        print("  - JIRA_PERSONAL_ACCESS_TOKEN")
-        print("\nFor Jira Cloud, set:")
-        print("  - JIRA_EMAIL")
-        print("  - JIRA_API_TOKEN")
-        print("\nSee .env.example for the required format.")
+        logger.error("Error: Missing Jira authentication credentials.")
+        logger.error("\nFor Jira Server/Data Center, set:")
+        logger.error("  - JIRA_PERSONAL_ACCESS_TOKEN")
+        logger.error("\nFor Jira Cloud, set:")
+        logger.error("  - JIRA_EMAIL")
+        logger.error("  - JIRA_API_TOKEN")
+        logger.error("\nSee .env.example for the required format.")
         sys.exit(1)
 
     # Parse command line arguments
@@ -922,7 +924,7 @@ def main() -> None:
                         incident_limit = int(sys.argv[i + 1])
                         i += 1
                     except ValueError:
-                        print(f"Error: --limit requires an integer argument")
+                        logger.error("Error: --limit requires an integer argument")
                         sys.exit(1)
             elif arg == '--details' or arg == '--verbose' or arg == '-v':
                 show_details = True
@@ -932,37 +934,37 @@ def main() -> None:
             elif arg == '--save-summary':
                 save_summary = True
             elif arg == '--help' or arg == '-h':
-                print("Usage: python pagerduty_jira_tool.py [OPTIONS]")
-                print("\nOptions:")
-                print("  --check           Check mode (read-only, default, shows details)")
-                print("  --update          Update mode (post comments, quiet by default)")
-                print("  --snooze [HOURS]  Update and snooze mode (quiet by default, default: 6 hours)")
-                print("  --all             Show all incidents (not just yours)")
-                print("  --check-jira      Check Jira status in check mode")
-                print("  --limit N         Process only first N incidents")
-                print("  --details, -v     Show detailed progress for each incident")
-                print("  --save-summary    Save summary to file")
-                print("  --help, -h        Show this help message")
-                print("\nDefault behavior:")
-                print("  • --check mode:  Shows detailed output")
-                print("  • --update mode: Quiet (only summary)")
-                print("  • --snooze mode: Quiet (only summary)")
-                print("  • Use --details to see progress for update/snooze modes")
-                print("\nExamples:")
-                print("  python pagerduty_jira_tool.py")
-                print("    (interactive menu)")
-                print("  python pagerduty_jira_tool.py --check --check-jira")
-                print("    (check with Jira status, detailed output)")
-                print("  python pagerduty_jira_tool.py --snooze")
-                print("    (snooze mode, quiet output by default)")
-                print("  python pagerduty_jira_tool.py --snooze --details")
-                print("    (snooze mode with detailed progress)")
-                print("  python pagerduty_jira_tool.py --update --limit 3 --details")
-                print("    (update first 3 incidents with detailed output)")
-                print("\nNote: --quiet/-q flag still works for backwards compatibility.")
+                logger.info("Usage: python pagerduty_jira_tool.py [OPTIONS]")
+                logger.info("\nOptions:")
+                logger.info("  --check           Check mode (read-only, default, shows details)")
+                logger.info("  --update          Update mode (post comments, quiet by default)")
+                logger.info("  --snooze [HOURS]  Update and snooze mode (quiet by default, default: 6 hours)")
+                logger.info("  --all             Show all incidents (not just yours)")
+                logger.info("  --check-jira      Check Jira status in check mode")
+                logger.info("  --limit N         Process only first N incidents")
+                logger.info("  --details, -v     Show detailed progress for each incident")
+                logger.info("  --save-summary    Save summary to file")
+                logger.info("  --help, -h        Show this help message")
+                logger.info("\nDefault behavior:")
+                logger.info("  • --check mode:  Shows detailed output")
+                logger.info("  • --update mode: Quiet (only summary)")
+                logger.info("  • --snooze mode: Quiet (only summary)")
+                logger.info("  • Use --details to see progress for update/snooze modes")
+                logger.info("\nExamples:")
+                logger.info("  python pagerduty_jira_tool.py")
+                logger.info("    (interactive menu)")
+                logger.info("  python pagerduty_jira_tool.py --check --check-jira")
+                logger.info("    (check with Jira status, detailed output)")
+                logger.info("  python pagerduty_jira_tool.py --snooze")
+                logger.info("    (snooze mode, quiet output by default)")
+                logger.info("  python pagerduty_jira_tool.py --snooze --details")
+                logger.info("    (snooze mode with detailed progress)")
+                logger.info("  python pagerduty_jira_tool.py --update --limit 3 --details")
+                logger.info("    (update first 3 incidents with detailed output)")
+                logger.info("\nNote: --quiet/-q flag still works for backwards compatibility.")
                 sys.exit(0)
             else:
-                print(f"Error: Unknown argument '{arg}'. Use --help for usage.")
+                logger.error(f"Error: Unknown argument '{arg}'. Use --help for usage.")
                 sys.exit(1)
 
             i += 1
@@ -992,25 +994,25 @@ def main() -> None:
 
         # Get current user ID
         if skip_user_filter:
-            print("Skipping user filter - showing ALL incidents.\n")
+            logger.info("Skipping user filter - showing ALL incidents.\n")
             current_user_id = None
         else:
-            print("Getting your PagerDuty user information...")
+            logger.info("Getting your PagerDuty user information...")
             try:
                 current_user_id = tool.get_current_user_id()
-                print(f"Filtering incidents assigned to you (User ID: {current_user_id})")
+                logger.info(f"Filtering incidents assigned to you (User ID: {current_user_id})")
             except RuntimeError as error:
-                print(f"Warning: {error}")
-                print("Continuing without user filter (will show all incidents).")
+                logger.warning(f"Warning: {error}")
+                logger.info("Continuing without user filter (will show all incidents).")
                 current_user_id = None
 
         # Show output mode info
         if mode in ['2', '3']:  # Update or Snooze modes
             if quiet_mode:
-                print("Output: Quiet mode (only summary will be shown)")
+                logger.info("Output: Quiet mode (only summary will be shown)")
             else:
-                print("Output: Detailed mode (progress for each incident will be shown)")
-        print()
+                logger.info("Output: Detailed mode (progress for each incident will be shown)")
+        logger.info("")
 
         # Execute based on mode
         summary = ""
@@ -1034,10 +1036,10 @@ def main() -> None:
             save_summary_to_file(summary)
 
     except ValueError as error:
-        print(f"Error: {error}")
+        logger.error(f"Error: {error}")
         sys.exit(1)
     except Exception as error:
-        print(f"Error: An unexpected error occurred: {error}")
+        logger.error(f"Error: An unexpected error occurred: {error}")
         sys.exit(1)
 
 

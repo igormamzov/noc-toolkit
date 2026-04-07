@@ -808,7 +808,9 @@ class TestMonitorContinuously:
             "errors": [],
         })
 
-        # Patch time.time to simulate: start → loop check → elapsed → end
+        # Patch time.time to simulate: start → one iteration within window → end.
+        # Allow 40 calls inside the window to account for logging formatter
+        # timestamp lookups that occur during the preamble logger.info() calls.
         call_count = [0]
         start = 1000.0
         end = start + 60  # 1-minute run
@@ -817,9 +819,9 @@ class TestMonitorContinuously:
             call_count[0] += 1
             if call_count[0] <= 2:
                 return start  # start_time and end_time setup
-            if call_count[0] <= 5:
-                return start + 1  # first iteration: within duration
-            return end + 1  # subsequent calls: past end
+            if call_count[0] <= 40:
+                return start + 1  # within window (preamble logs + one loop iteration)
+            return end + 1  # past end — exit while loop
 
         with patch("pd_monitor.time.time", side_effect=fake_time), \
              patch("pd_monitor.time.sleep"):
@@ -840,9 +842,8 @@ class TestMonitorContinuously:
 
 class TestMain:
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
-    def test_once_mode(self, mock_dotenv, mock_cls):
+    def test_once_mode(self, mock_cls):
         mock_instance = MagicMock()
         mock_instance.check_incidents_once.return_value = {
             "total": 0, "new_incidents": 0, "needs_attention": 0,
@@ -858,9 +859,8 @@ class TestMain:
         mock_instance.check_incidents_once.assert_called_once()
 
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
-    def test_duration_mode(self, mock_dotenv, mock_cls):
+    def test_duration_mode(self, mock_cls):
         mock_instance = MagicMock()
         mock_cls.return_value = mock_instance
 
@@ -870,9 +870,8 @@ class TestMain:
 
         mock_instance.monitor_continuously.assert_called_once_with(duration_minutes=30)
 
-    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {}, clear=True)
-    def test_missing_token_exits(self, mock_dotenv):
+    def test_missing_token_exits(self):
         with patch("sys.argv", ["pd_monitor.py", "--once"]):
             from pd_monitor import main
             with pytest.raises(SystemExit) as exc_info:
@@ -880,9 +879,8 @@ class TestMain:
             assert exc_info.value.code == 1
 
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
-    def test_dry_run_flag(self, mock_dotenv, mock_cls):
+    def test_dry_run_flag(self, mock_cls):
         mock_instance = MagicMock()
         mock_instance.check_incidents_once.return_value = {
             "total": 0, "new_incidents": 0, "needs_attention": 0,
@@ -900,9 +898,8 @@ class TestMain:
         assert call_kwargs["dry_run"] is True
 
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
-    def test_background_default_duration(self, mock_dotenv, mock_cls):
+    def test_background_default_duration(self, mock_cls):
         mock_instance = MagicMock()
         mock_cls.return_value = mock_instance
 
@@ -913,9 +910,8 @@ class TestMain:
         mock_instance.monitor_continuously.assert_called_once_with(duration_minutes=60)
 
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
-    def test_verbose_and_details_flags(self, mock_dotenv, mock_cls):
+    def test_verbose_and_details_flags(self, mock_cls):
         mock_instance = MagicMock()
         mock_instance.check_incidents_once.return_value = {
             "total": 0, "new_incidents": 0, "needs_attention": 0,
@@ -933,9 +929,8 @@ class TestMain:
         assert call_kwargs["details"] is True
 
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
-    def test_pattern_override(self, mock_dotenv, mock_cls):
+    def test_pattern_override(self, mock_cls):
         mock_instance = MagicMock()
         mock_instance.check_incidents_once.return_value = {
             "total": 0, "new_incidents": 0, "needs_attention": 0,
@@ -952,9 +947,8 @@ class TestMain:
         assert call_kwargs["comment_pattern"] == "my custom"
 
     @patch("pd_monitor.PagerDutyMonitor")
-    @patch("pd_monitor.load_env")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
-    def test_keyboard_interrupt_exits_130(self, mock_dotenv, mock_cls):
+    def test_keyboard_interrupt_exits_130(self, mock_cls):
         mock_instance = MagicMock()
         mock_instance.check_incidents_once.side_effect = KeyboardInterrupt
         mock_cls.return_value = mock_instance
@@ -964,3 +958,350 @@ class TestMain:
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 130
+
+    @patch("pd_monitor.PagerDutyMonitor")
+    @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
+    def test_interval_and_output_overrides(self, mock_cls):
+        """Cover args.interval and args.output branches in main()."""
+        mock_instance = MagicMock()
+        mock_instance.check_incidents_once.return_value = {
+            "total": 0, "new_incidents": 0, "needs_attention": 0,
+            "acknowledged": 0, "silent_ack": 0, "already_processed": 0,
+            "errors": [],
+        }
+        mock_cls.return_value = mock_instance
+
+        with patch("sys.argv", [
+            "pd_monitor.py", "--once",
+            "--interval", "60",
+            "--output", "/tmp/custom-output.txt",
+        ]):
+            from pd_monitor import main
+            main()
+
+        call_kwargs = mock_cls.call_args[1]
+        assert call_kwargs["check_interval_seconds"] == 60
+        assert call_kwargs["output_file"] == "/tmp/custom-output.txt"
+
+    @patch("pd_monitor.PagerDutyMonitor")
+    @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
+    def test_once_mode_with_errors_in_summary(self, mock_cls):
+        """Cover the errors list printing block in once-mode summary."""
+        mock_instance = MagicMock()
+        mock_instance.check_incidents_once.return_value = {
+            "total": 1, "new_incidents": 0, "needs_attention": 0,
+            "acknowledged": 0, "silent_ack": 0, "already_processed": 0,
+            "errors": ["Failed to add comment to P001"],
+        }
+        mock_cls.return_value = mock_instance
+
+        with patch("sys.argv", ["pd_monitor.py", "--once"]):
+            from pd_monitor import main
+            main()
+
+        mock_instance.check_incidents_once.assert_called_once()
+
+    @patch("pd_monitor.PagerDutyMonitor")
+    @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
+    def test_monitor_init_runtime_error_exits_1(self, mock_cls):
+        """Cover RuntimeError from PagerDutyMonitor init → sys.exit(1)."""
+        mock_cls.side_effect = RuntimeError("Unable to get user ID from PagerDuty API")
+
+        with patch("sys.argv", ["pd_monitor.py", "--once"]):
+            from pd_monitor import main
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+
+    @patch("pd_monitor.PagerDutyMonitor")
+    @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
+    def test_generic_exception_exits_1(self, mock_cls):
+        """Cover generic Exception handler in main() → sys.exit(1)."""
+        mock_instance = MagicMock()
+        mock_instance.check_incidents_once.side_effect = RuntimeError("unexpected boom")
+        mock_cls.return_value = mock_instance
+
+        with patch("sys.argv", ["pd_monitor.py", "--once"]), \
+             patch("traceback.print_exc"):
+            from pd_monitor import main
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+
+    @patch("pd_monitor.show_duration_menu", return_value=45)
+    @patch("pd_monitor.PagerDutyMonitor")
+    @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
+    def test_no_duration_no_background_calls_menu(self, mock_cls, mock_menu):
+        """Cover the show_duration_menu() branch when no --duration and no --background."""
+        mock_instance = MagicMock()
+        mock_cls.return_value = mock_instance
+
+        with patch("sys.argv", ["pd_monitor.py"]):
+            from pd_monitor import main
+            main()
+
+        mock_menu.assert_called_once()
+        mock_instance.monitor_continuously.assert_called_once_with(duration_minutes=45)
+
+    @patch("pd_monitor.PagerDutyMonitor")
+    @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
+    def test_once_mode_custom_comment_pattern_in_header(self, mock_cls):
+        """Cover the else branch for non-default comment pattern header."""
+        mock_instance = MagicMock()
+        mock_instance.check_incidents_once.return_value = {
+            "total": 0, "new_incidents": 0, "needs_attention": 0,
+            "acknowledged": 0, "silent_ack": 0, "already_processed": 0,
+            "errors": [],
+        }
+        mock_cls.return_value = mock_instance
+
+        with patch("sys.argv", ["pd_monitor.py", "--once", "--pattern", "custom msg"]):
+            from pd_monitor import main
+            main()
+
+        call_kwargs = mock_cls.call_args[1]
+        assert call_kwargs["comment_pattern"] == "custom msg"
+
+
+# ===========================================================================
+# ImportError block coverage
+# ===========================================================================
+
+class TestImportErrorBlock:
+    def test_missing_pagerduty_exits(self):
+        """Cover lines 74-76: the ImportError block when pagerduty is not installed."""
+        import sys
+        import importlib
+        # Save the real module
+        real_pagerduty = sys.modules.get("pagerduty")
+        real_pd_monitor = sys.modules.get("pd_monitor")
+
+        try:
+            # Remove pagerduty from sys.modules so the import fails
+            sys.modules["pagerduty"] = None  # type: ignore[assignment]
+            # Remove pd_monitor so it re-executes on import
+            sys.modules.pop("pd_monitor", None)
+
+            with pytest.raises(SystemExit) as exc_info:
+                import pd_monitor  # noqa: F401
+            assert exc_info.value.code == 1
+        finally:
+            # Restore original modules
+            if real_pagerduty is not None:
+                sys.modules["pagerduty"] = real_pagerduty
+            elif "pagerduty" in sys.modules:
+                del sys.modules["pagerduty"]
+            if real_pd_monitor is not None:
+                sys.modules["pd_monitor"] = real_pd_monitor
+            elif "pd_monitor" in sys.modules:
+                del sys.modules["pd_monitor"]
+            # Re-import to restore the module
+            importlib.import_module("pd_monitor")
+
+
+# ===========================================================================
+# log_needs_attention IOError branch
+# ===========================================================================
+
+class TestLogNeedsAttentionIOError:
+    def test_ioerror_logged_as_warning(self, tmp_path):
+        """Cover lines 185-186: IOError when writing to output file."""
+        monitor = _make_monitor(output_file=str(tmp_path / "attention.txt"))
+        with patch("builtins.open", side_effect=IOError("disk full")):
+            # Should not raise; IOError is caught and logged as warning
+            monitor.log_needs_attention("P001", "Title", "https://pd.example.com/P001")
+
+
+# ===========================================================================
+# check_incidents_once — coverage for action_detail branches and summary counts
+# ===========================================================================
+
+class TestCheckIncidentsOnceBranches:
+    def test_logged_to_file_action_detail(self):
+        """Cover line 565: 'logged to file' appended to action_detail."""
+        monitor = _make_monitor()
+        monitor.get_triggered_incidents = MagicMock(return_value=[_incident("P001")])
+        monitor.process_incident = MagicMock(return_value={
+            "success": True,
+            "action": "needs_attention",
+            "message": "Acknowledged and logged",
+            "url": "http://x",
+            "comment_added": False,
+            "logged_to_file": True,
+        })
+        summary = monitor.check_incidents_once()
+        assert summary["needs_attention"] == 1
+
+    def test_acknowledge_only_summary_count(self):
+        """Cover line 578: acknowledge_only increments acknowledged counter."""
+        monitor = _make_monitor()
+        monitor.get_triggered_incidents = MagicMock(return_value=[_incident("P001")])
+        monitor.process_incident = MagicMock(return_value={
+            "success": True,
+            "action": "acknowledge_only",
+            "message": "Acknowledged (has other comments)",
+            "url": "http://x",
+            "comment_added": False,
+            "logged_to_file": False,
+        })
+        summary = monitor.check_incidents_once()
+        assert summary["acknowledged"] == 1
+
+
+# ===========================================================================
+# monitor_continuously — details mode and incident display branches
+# ===========================================================================
+
+class TestMonitorContinuouslyBranches:
+    """Tests targeting the uncovered branches in monitor_continuously."""
+
+    def _summary_with(self, **kwargs) -> dict:
+        base = {
+            "total": 0, "new_incidents": 0, "needs_attention": 0,
+            "acknowledged": 0, "silent_ack": 0, "already_processed": 0,
+            "errors": [],
+        }
+        base.update(kwargs)
+        return base
+
+    def _make_fake_time(self, start: float, window_calls: int = 50):
+        """Return a fake time function that stays within the window for window_calls
+        iterations then returns past-end. window_calls must be large enough to cover
+        Python logging's internal time.time() calls (one per log record created)."""
+        end = start + 60
+        calls = [0]
+
+        def fake_time():
+            calls[0] += 1
+            if calls[0] <= 2:
+                return start  # start_time and end_time setup
+            if calls[0] <= window_calls:
+                return start + 1  # within window
+            return end + 1  # past end
+
+        return fake_time
+
+    def test_details_mode_shows_check_header(self):
+        """Cover lines 638-642: details mode check header."""
+        monitor = _make_monitor(details=True, background=True)
+        monitor.check_incidents_once = MagicMock(
+            return_value=self._summary_with(total=0)
+        )
+        with patch("pd_monitor.time.time", side_effect=self._make_fake_time(1000.0)), \
+             patch("pd_monitor.time.sleep"):
+            monitor.monitor_continuously(duration_minutes=1)
+
+        assert monitor.check_incidents_once.call_count >= 1
+
+    def test_details_mode_no_incidents_message(self):
+        """Cover line 667: 'No triggered incidents found' in details mode."""
+        monitor = _make_monitor(details=True, background=True)
+        monitor.check_incidents_once = MagicMock(
+            return_value=self._summary_with(total=0)
+        )
+        with patch("pd_monitor.time.time", side_effect=self._make_fake_time(1000.0)), \
+             patch("pd_monitor.time.sleep"):
+            monitor.monitor_continuously(duration_minutes=1)
+
+    def test_incidents_found_all_summary_branches(self):
+        """Cover lines 650-663: all incident count display branches."""
+        monitor = _make_monitor(background=True)
+        monitor.check_incidents_once = MagicMock(
+            return_value=self._summary_with(
+                total=4,
+                new_incidents=1,
+                silent_ack=1,
+                acknowledged=1,
+                needs_attention=1,
+                errors=["err1"],
+            )
+        )
+        with patch("pd_monitor.time.time", side_effect=self._make_fake_time(1000.0)), \
+             patch("pd_monitor.time.sleep"):
+            monitor.monitor_continuously(duration_minutes=1)
+
+    def test_incidents_found_with_clear_line(self):
+        """Cover line 651: clear line print when not background and incidents found."""
+        monitor = _make_monitor(background=False)
+        monitor.check_incidents_once = MagicMock(
+            return_value=self._summary_with(total=1, new_incidents=1)
+        )
+        with patch("pd_monitor.time.time", side_effect=self._make_fake_time(1000.0)), \
+             patch("pd_monitor.time.sleep"):
+            monitor.monitor_continuously(duration_minutes=1)
+
+    def test_background_sleep_branch(self):
+        """Cover line 675: background mode plain sleep."""
+        monitor = _make_monitor(background=True, check_interval_seconds=5)
+        monitor.check_incidents_once = MagicMock(
+            return_value=self._summary_with(total=0)
+        )
+        with patch("pd_monitor.time.time", side_effect=self._make_fake_time(1000.0)), \
+             patch("pd_monitor.time.sleep") as mock_sleep:
+            monitor.monitor_continuously(duration_minutes=1)
+
+        mock_sleep.assert_called()
+
+    def test_details_countdown_branch(self):
+        """Cover lines 678-683: details mode countdown sleep."""
+        monitor = _make_monitor(details=True, background=False, check_interval_seconds=2)
+        monitor.check_incidents_once = MagicMock(
+            return_value=self._summary_with(total=0)
+        )
+        with patch("pd_monitor.time.time", side_effect=self._make_fake_time(1000.0)), \
+             patch("pd_monitor.time.sleep"):
+            monitor.monitor_continuously(duration_minutes=1)
+
+    def test_progress_bar_branch(self):
+        """Cover lines 686-690: normal mode (not background, not details) progress bar."""
+        monitor = _make_monitor(details=False, background=False, check_interval_seconds=2)
+        monitor.check_incidents_once = MagicMock(
+            return_value=self._summary_with(total=0)
+        )
+        with patch("pd_monitor.time.time", side_effect=self._make_fake_time(1000.0)), \
+             patch("pd_monitor.time.sleep"):
+            monitor.monitor_continuously(duration_minutes=1)
+
+    def test_completion_clear_line_not_background(self):
+        """Cover line 698: clear line printed when not background at completion."""
+        monitor = _make_monitor(background=False)
+        monitor.check_incidents_once = MagicMock(
+            return_value=self._summary_with(total=0)
+        )
+        # Immediately expire: after setup calls, return past end
+        calls = [0]
+        start = 1000.0
+
+        def fake_time():
+            calls[0] += 1
+            if calls[0] <= 2:
+                return start
+            return start + 61  # immediately past end — skips loop body
+
+        with patch("pd_monitor.time.time", side_effect=fake_time), \
+             patch("pd_monitor.time.sleep"):
+            monitor.monitor_continuously(duration_minutes=1)
+
+
+# ===========================================================================
+# show_duration_menu — validation branches
+# ===========================================================================
+
+class TestShowDurationMenuValidation:
+    @patch("builtins.input", side_effect=["6", "0", "45"])
+    def test_custom_duration_out_of_range_then_valid(self, _):
+        """Cover lines 840-841: value out of range error message, then valid."""
+        from pd_monitor import show_duration_menu
+        assert show_duration_menu() == 45
+
+    @patch("builtins.input", side_effect=["6", "abc", "30"])
+    def test_custom_duration_invalid_then_valid(self, _):
+        """Cover lines 841-842: ValueError on non-integer input, then valid."""
+        from pd_monitor import show_duration_menu
+        assert show_duration_menu() == 30
+
+    @patch("builtins.input", side_effect=["9", "1"])
+    def test_invalid_choice_then_valid(self, _):
+        """Cover line 844: invalid choice error message, then valid option."""
+        from pd_monitor import show_duration_menu
+        assert show_duration_menu() == 60

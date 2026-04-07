@@ -4,6 +4,8 @@
 .env
 *.env
 !.env.example
+config.yaml
+!config.yaml.example
 
 # Python
 __pycache__/
@@ -90,6 +92,11 @@ noc-toolkit-*.tar.gz
 
 # GitHub Actions artifacts
 artifacts/
+
+# Test / coverage artifacts
+htmlcov/
+.coverage
+.pytest_cache/
 
 # Autoresearch (autonomous agent experiments — isolated from main)
 autoresearch/

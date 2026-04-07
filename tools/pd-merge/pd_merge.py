@@ -13,6 +13,7 @@ Merge logic based on pd-merge-logic.md v1.2:
 """
 
 import json
+import logging
 import os
 import re
 import sys
@@ -30,10 +31,11 @@ SKIP_FILE = Path(__file__).parent / ".pd_merge_skips.json"
 
 try:
     import pagerduty
-    from noc_utils import load_env, require_env, new_pd_client, parse_iso_dt as _parse_iso_dt
+    from noc_utils import require_env, new_pd_client, parse_iso_dt as _parse_iso_dt, setup_logging
 except ImportError as import_error:
-    print(f"Error: Missing required dependencies. Please run: pip install -r requirements.txt")
-    print(f"Details: {import_error}")
+    logging.basicConfig()
+    logging.error("Missing required dependencies. Please run: pip install -r requirements.txt")
+    logging.error("Details: %s", import_error)
     sys.exit(1)
 
 # Optional Jira import — only needed for Scenario B
@@ -43,6 +45,8 @@ try:
     JIRA_AVAILABLE = True
 except ImportError:
     JIRA_AVAILABLE = False
+
+logger = setup_logging(name=__name__)
 
 # ---------------------------------------------------------------------------
 # Regex constants
@@ -207,15 +211,6 @@ class PagerDutyMergeTool:
             self.jira_client, _ = new_jira_client(jira_server_url, jira_personal_access_token)
 
     # ------------------------------------------------------------------
-    # Logging
-    # ------------------------------------------------------------------
-
-    def _log(self, message: str) -> None:
-        """Print message only in verbose mode."""
-        if self.verbose:
-            print(f"  [debug] {message}")
-
-    # ------------------------------------------------------------------
     # Skip persistence
     # ------------------------------------------------------------------
 
@@ -243,7 +238,7 @@ class PagerDutyMergeTool:
                 encoding='utf-8',
             )
         except OSError as error:
-            print(f"  Warning: Could not save skip file: {error}")
+            logger.warning("Could not save skip file: %s", error)
 
     # ------------------------------------------------------------------
     # Step 1: Authentication and fetch
@@ -597,9 +592,9 @@ class PagerDutyMergeTool:
                         name = match.group(1).strip()
                         name = MONITOR_SUFFIX_RE.sub('', name)
                         known_jobs.add(name)
-            self._log(f"Mass-failure incident has {len(alerts)} alerts, {len(known_jobs)} known jobs")
+            logger.debug(f"Mass-failure incident has {len(alerts)} alerts, {len(known_jobs)} known jobs")
         except pagerduty.Error as error:
-            self._log(f"Failed to fetch alerts for mass-failure incident: {error}")
+            logger.debug(f"Failed to fetch alerts for mass-failure incident: {error}")
 
         candidates: List[ParsedIncident] = []
         valid_types = {'databricks', 'monitor', 'airflow_consec', 'airflow_time', 'consequential'}
@@ -633,18 +628,18 @@ class PagerDutyMergeTool:
 
             # Strong match: job name in known alerts
             if inc.normalized_job_name in known_jobs:
-                self._log(f"Strong match (in alerts): {inc.incident_id} — {inc.normalized_job_name}")
+                logger.debug(f"Strong match (in alerts): {inc.incident_id} — {inc.normalized_job_name}")
                 candidates.append(inc)
                 continue
 
             # Consequential failure
             if inc.alert_type == 'consequential':
-                self._log(f"Consequential: {inc.incident_id} — {inc.title}")
+                logger.debug(f"Consequential: {inc.incident_id} — {inc.title}")
                 candidates.append(inc)
                 continue
 
             # Likely: same time window, valid type, no own ticket
-            self._log(f"Likely match: {inc.incident_id} — {inc.normalized_job_name}")
+            logger.debug(f"Likely match: {inc.incident_id} — {inc.normalized_job_name}")
             candidates.append(inc)
 
         if not candidates:
@@ -695,7 +690,7 @@ class PagerDutyMergeTool:
                 break
 
         if target is None:
-            self._log("Scenario D: no 'failed to start' target found among RDS export incidents")
+            logger.debug("Scenario D: no 'failed to start' target found among RDS export incidents")
             return None
 
         # Validate: target must have "Failed to start" in its notes
@@ -715,10 +710,10 @@ class PagerDutyMergeTool:
                     for note in notes
                 )
             except pagerduty.Error as error:
-                self._log(f"Scenario D: failed to re-fetch notes for validation: {error}")
+                logger.debug(f"Scenario D: failed to re-fetch notes for validation: {error}")
 
         if not has_failed_to_start_note:
-            self._log(
+            logger.debug(
                 f"Scenario D: target {target.incident_id} has no "
                 f"'Failed to start' in notes — skipping"
             )
@@ -737,7 +732,7 @@ class PagerDutyMergeTool:
             sources=sources,
             scenario="D",
         )
-        self._log(
+        logger.debug(
             f"Scenario D: built RDS exports group — "
             f"target={target.incident_id}, {len(sources)} source(s)"
         )
@@ -764,7 +759,7 @@ class PagerDutyMergeTool:
                 f"incidents/{incident.incident_id}/notes"
             ))
         except pagerduty.Error as error:
-            self._log(f"Failed to fetch notes for {incident.incident_id}: {error}")
+            logger.debug(f"Failed to fetch notes for {incident.incident_id}: {error}")
             incident.notes_fetched = True
             return
 
@@ -1004,7 +999,7 @@ class PagerDutyMergeTool:
                 source.incident_id,
             )
             status_text = "OK" if result.success else f"FAIL: {result.error_message}"
-            print(f"    {source.incident_id} -> {group.target.incident_id}: {status_text}")
+            logger.info("    %s -> %s: %s", source.incident_id, group.target.incident_id, status_text)
             results.append(result)
 
         return results
@@ -1053,14 +1048,14 @@ class PagerDutyMergeTool:
     def print_group_detail_table(self, group: MergeGroup) -> None:
         """Print the detailed ASCII table for one group before confirmation."""
         incident_count = len(group.incidents)
-        print(f"\nGroup: {group.group_key} — {incident_count} incidents (Scenario {group.scenario})")
+        logger.info("\nGroup: %s — %d incidents (Scenario %s)", group.group_key, incident_count, group.scenario)
 
         if group.skip_reason:
-            print(f"  SKIPPED: {group.skip_reason}")
+            logger.info("  SKIPPED: %s", group.skip_reason)
             return
 
         if not group.target:
-            print("  ERROR: No target selected")
+            logger.info("  ERROR: No target selected")
             return
 
         # Determine if we need a Date column (cross-date groups)
@@ -1111,12 +1106,12 @@ class PagerDutyMergeTool:
 
         # Print table
         separator = self._make_separator(widths)
-        print(separator)
-        print(self._make_row(headers, widths))
-        print(separator)
+        logger.info(separator)
+        logger.info(self._make_row(headers, widths))
+        logger.info(separator)
         for row in rows:
-            print(self._make_row(row, widths))
-        print(separator)
+            logger.info(self._make_row(row, widths))
+        logger.info(separator)
 
 
     def print_summary_line(self, idx: int, group: MergeGroup) -> None:
@@ -1124,12 +1119,14 @@ class PagerDutyMergeTool:
         source_count = len(group.sources) if group.sources else len(group.incidents) - 1
         target_id = group.target.incident_id if group.target else "?"
         status = f"target: {target_id}" if not group.skip_reason else f"SKIP: {group.skip_reason}"
-        print(
-            f"  [{idx}] {group.group_key:<45} "
-            f"| {len(group.incidents)} incidents "
-            f"| Scenario {group.scenario} "
-            f"| {source_count} to merge "
-            f"| {status}"
+        logger.info(
+            "  [%d] %-45s | %d incidents | Scenario %s | %d to merge | %s",
+            idx,
+            group.group_key,
+            len(group.incidents),
+            group.scenario,
+            source_count,
+            status,
         )
 
     def print_results_summary(
@@ -1139,23 +1136,23 @@ class PagerDutyMergeTool:
     ) -> None:
         """Print final summary of merge operations."""
         if not all_results and not skipped_groups:
-            print("No merges performed.")
+            logger.info("No merges performed.")
             return
 
         successes = sum(1 for r in all_results if r.success)
         failures = sum(1 for r in all_results if not r.success)
 
-        print("Merge Results Summary")
-        print("-" * 40)
+        logger.info("Merge Results Summary")
+        logger.info("-" * 40)
         if all_results:
-            print(f"  Merged:  {successes}")
+            logger.info("  Merged:  %d", successes)
             if failures:
-                print(f"  Failed:  {failures}")
+                logger.info("  Failed:  %d", failures)
                 for r in all_results:
                     if not r.success:
-                        print(f"    {r.source_id}: {r.error_message}")
+                        logger.info("    %s: %s", r.source_id, r.error_message)
         if skipped_groups:
-            print(f"  Skipped: {len(skipped_groups)} group(s)")
+            logger.info("  Skipped: %d group(s)", len(skipped_groups))
 
     # ------------------------------------------------------------------
     # Main orchestration
@@ -1164,16 +1161,16 @@ class PagerDutyMergeTool:
     def run(self) -> None:
         """Full interactive merge workflow."""
         # 1. Resolve current user
-        print("Fetching PagerDuty user info...")
+        logger.info("Fetching PagerDuty user info...")
         self.get_current_user()
-        print(f"  User: {self.user_email} ({self.user_id})")
+        logger.info("  User: %s (%s)", self.user_email, self.user_id)
 
         # 2. Fetch active incidents
-        print("Fetching active incidents...")
+        logger.info("Fetching active incidents...")
         raw_incidents = self.fetch_active_incidents()
-        print(f"  Found {len(raw_incidents)} active incident(s).")
+        logger.info("  Found %d active incident(s).", len(raw_incidents))
         if not raw_incidents:
-            print("Nothing to merge.")
+            logger.info("Nothing to merge.")
             return
 
         # 3. Parse and enrich
@@ -1188,20 +1185,20 @@ class PagerDutyMergeTool:
             ]
             filtered_count = before - len(all_incidents)
             if filtered_count:
-                print(f"  Filtered out {filtered_count} previously skipped incident(s).")
+                logger.info("  Filtered out %d previously skipped incident(s).", filtered_count)
 
         # 4. Detect mass-failure DSSD incident (Scenario C)
         mass_failure_incident = self._find_mass_failure_incident(all_incidents)
         if mass_failure_incident:
-            print(
-                f"  Mass-failure incident detected: "
-                f"{mass_failure_incident.incident_id} "
-                f"({', '.join(mass_failure_incident.jira_tickets)})"
+            logger.info(
+                "  Mass-failure incident detected: %s (%s)",
+                mass_failure_incident.incident_id,
+                ", ".join(mass_failure_incident.jira_tickets),
             )
 
         # 5. Group by job name
         groups_dict = self.group_incidents(all_incidents)
-        self._log(f"Found {len(groups_dict)} same-name group(s) with 2+ incidents")
+        logger.debug(f"Found {len(groups_dict)} same-name group(s) with 2+ incidents")
 
         # 6. Classify each group (A, B, or skip)
         merge_groups: List[MergeGroup] = []
@@ -1237,10 +1234,14 @@ class PagerDutyMergeTool:
             )
             if rds_target_candidate:
                 rds_source_count = len(rds_candidates) - 1
-                print(f"\n--- Options ---")
-                print(f"  [D] RDS Exports merge: {len(rds_candidates)} RDS export incident(s) found")
-                print(f"      Target: {rds_target_candidate.incident_id} ({self._strip_prefix(rds_target_candidate.title)[0]})")
-                print(f"      Sources: {rds_source_count} individual RDS export failure(s)")
+                logger.info("\n--- Options ---")
+                logger.info("  [D] RDS Exports merge: %d RDS export incident(s) found", len(rds_candidates))
+                logger.info(
+                    "      Target: %s (%s)",
+                    rds_target_candidate.incident_id,
+                    self._strip_prefix(rds_target_candidate.title)[0],
+                )
+                logger.info("      Sources: %d individual RDS export failure(s)", rds_source_count)
                 try:
                     rds_answer = input("  Enable RDS Exports merge? [y/n]: ").strip().lower()
                 except (KeyboardInterrupt, EOFError):
@@ -1249,15 +1250,15 @@ class PagerDutyMergeTool:
                 if rds_answer in ('y', 'yes'):
                     rds_group = self.build_rds_exports_group(all_incidents)
                     if rds_group:
-                        print(f"  Validating target notes... \"Failed to start\" found in notes.")
+                        logger.info('  Validating target notes... "Failed to start" found in notes.')
                         merge_groups.append(rds_group)
                     else:
-                        print("  RDS Exports merge skipped: target has no 'Failed to start' in notes.")
+                        logger.info("  RDS Exports merge skipped: target has no 'Failed to start' in notes.")
                 else:
-                    print("  RDS Exports merge disabled.")
+                    logger.info("  RDS Exports merge disabled.")
 
         # 8. Fetch notes for all incidents in mergeable groups
-        print("Fetching incident notes...")
+        logger.info("Fetching incident notes...")
         notes_count = 0
         for group in merge_groups:
             if group.skip_reason is None:
@@ -1265,7 +1266,7 @@ class PagerDutyMergeTool:
                     if not inc.notes_fetched:
                         self.fetch_and_classify_notes(inc)
                         notes_count += 1
-        self._log(f"Fetched notes for {notes_count} incident(s)")
+        logger.debug(f"Fetched notes for {notes_count} incident(s)")
 
         # 9. Scenario B: validate cross-date merges via Jira
         for group in merge_groups:
@@ -1281,23 +1282,24 @@ class PagerDutyMergeTool:
         actionable = [g for g in merge_groups if g.skip_reason is None]
         skipped = [g for g in merge_groups if g.skip_reason is not None]
 
-        print(f"\n{'=' * 70}")
-        print(
-            f"Merge Plan: {len(actionable)} group(s) to merge, "
-            f"{len(skipped)} skipped"
+        logger.info("\n%s", "=" * 70)
+        logger.info(
+            "Merge Plan: %d group(s) to merge, %d skipped",
+            len(actionable),
+            len(skipped),
         )
-        print(f"{'=' * 70}")
+        logger.info("=" * 70)
 
         for idx, group in enumerate(actionable, start=1):
             self.print_summary_line(idx, group)
 
         if skipped:
-            print(f"\nSkipped ({len(skipped)}):")
+            logger.info("\nSkipped (%d):", len(skipped))
             for group in skipped:
-                print(f"  - {group.group_key}: {group.skip_reason}")
+                logger.info("  - %s: %s", group.group_key, group.skip_reason)
 
         if not actionable:
-            print("\nNo groups to merge.")
+            logger.info("\nNo groups to merge.")
             return
 
         # 12. Per-group confirmation and execution
@@ -1306,11 +1308,11 @@ class PagerDutyMergeTool:
         newly_skipped_ids: Set[str] = set()
 
         for idx, group in enumerate(actionable, start=1):
-            print(f"\n{'=' * 70}")
+            logger.info("\n%s", "=" * 70)
             self.print_group_detail_table(group)
 
             if self.dry_run:
-                print("\n  [DRY RUN] Would merge the above group.")
+                logger.info("\n  [DRY RUN] Would merge the above group.")
                 continue
 
             if not merge_all:
@@ -1321,7 +1323,7 @@ class PagerDutyMergeTool:
                 try:
                     answer = input(prompt).strip().lower()
                 except (KeyboardInterrupt, EOFError):
-                    print("\nAborted.")
+                    logger.info("\nAborted.")
                     break
 
                 if answer == 'all':
@@ -1330,7 +1332,7 @@ class PagerDutyMergeTool:
                     # Per-incident selection mode
                     selected_sources = self._select_incidents(group)
                     if not selected_sources:
-                        print("  No incidents selected, skipping group.")
+                        logger.info("  No incidents selected, skipping group.")
                         # Skip the unselected sources
                         for src in group.sources:
                             newly_skipped_ids.add(src.incident_id)
@@ -1344,23 +1346,24 @@ class PagerDutyMergeTool:
                             newly_skipped_ids.add(src.incident_id)
                     group.sources = selected_sources
                 elif answer in ('n', 'skip', ''):
-                    print(f"  Skipping: {group.group_key}")
+                    logger.info("  Skipping: %s", group.group_key)
                     for src in group.sources:
                         newly_skipped_ids.add(src.incident_id)
                     group.skip_reason = "user skipped"
                     skipped.append(group)
                     continue
                 elif answer != 'y':
-                    print("  Unrecognized input, skipping.")
+                    logger.info("  Unrecognized input, skipping.")
                     for src in group.sources:
                         newly_skipped_ids.add(src.incident_id)
                     group.skip_reason = "user skipped"
                     skipped.append(group)
                     continue
 
-            print(
-                f"\n  Merging {len(group.sources)} incident(s) "
-                f"into {group.target.incident_id}..."
+            logger.info(
+                "\n  Merging %d incident(s) into %s...",
+                len(group.sources),
+                group.target.incident_id,
             )
             results = self.execute_group_merge(group)
             all_results.extend(results)
@@ -1369,12 +1372,12 @@ class PagerDutyMergeTool:
         if newly_skipped_ids:
             self.skipped_ids.update(newly_skipped_ids)
             self.save_skipped_ids(self.skipped_ids)
-            print(f"\n  Saved {len(newly_skipped_ids)} skipped incident(s) to skip list.")
+            logger.info("\n  Saved %d skipped incident(s) to skip list.", len(newly_skipped_ids))
 
         # 14. Final summary
-        print(f"\n{'=' * 70}")
+        logger.info("\n%s", "=" * 70)
         self.print_results_summary(all_results, skipped)
-        print(f"{'=' * 70}")
+        logger.info("=" * 70)
 
     def _select_incidents(self, group: MergeGroup) -> List[ParsedIncident]:
         """
@@ -1387,18 +1390,18 @@ class PagerDutyMergeTool:
             List of selected ParsedIncident sources to merge.
         """
         sources = group.sources
-        print(f"\n  Select incidents to merge into {group.target.incident_id}:")
-        print(f"  (enter numbers separated by commas, e.g. '1,3' or 'all')\n")
+        logger.info("\n  Select incidents to merge into %s:", group.target.incident_id)
+        logger.info("  (enter numbers separated by commas, e.g. '1,3' or 'all')\n")
 
         for i, src in enumerate(sources, start=1):
             alert_label = ALERT_TYPE_LABELS.get(src.alert_type, src.alert_type)
             time_str = self._format_time(src.created_at)
-            print(f"    {i}. {src.incident_id}  {alert_label:<30}  {time_str}")
+            logger.info("    %d. %s  %-30s  %s", i, src.incident_id, alert_label, time_str)
 
         try:
             answer = input(f"\n  Merge which? [1-{len(sources)}, all, none]: ").strip().lower()
         except (KeyboardInterrupt, EOFError):
-            print("\n  Cancelled.")
+            logger.info("\n  Cancelled.")
             return []
 
         if answer in ('none', 'n', ''):
@@ -1419,21 +1422,21 @@ class PagerDutyMergeTool:
                     for idx in range(start_val, end_val + 1):
                         selected_indices.add(idx)
                 except ValueError:
-                    print(f"  Invalid range: '{part}', skipping.")
+                    logger.info("  Invalid range: '%s', skipping.", part)
             else:
                 try:
                     selected_indices.add(int(part))
                 except ValueError:
-                    print(f"  Invalid number: '{part}', skipping.")
+                    logger.info("  Invalid number: '%s', skipping.", part)
 
         for idx in sorted(selected_indices):
             if 1 <= idx <= len(sources):
                 selected.append(sources[idx - 1])
             else:
-                print(f"  Index {idx} out of range, skipping.")
+                logger.info("  Index %d out of range, skipping.", idx)
 
         if selected:
-            print(f"  Selected {len(selected)} of {len(sources)} incidents.")
+            logger.info("  Selected %d of %d incidents.", len(selected), len(sources))
 
         return selected
 
@@ -1452,7 +1455,7 @@ class PagerDutyMergeTool:
 
         for new_inc in new_incidents:
             should_merge, reason = self.validate_cross_date_merge(old_ref, new_inc)
-            self._log(f"Scenario B: {new_inc.incident_id} vs {old_ref.incident_id}: {reason}")
+            logger.debug(f"Scenario B: {new_inc.incident_id} vs {old_ref.incident_id}: {reason}")
             if not should_merge:
                 group.skip_reason = reason
                 return
@@ -1464,7 +1467,6 @@ class PagerDutyMergeTool:
 
 def main() -> None:
     """Entry point for the PagerDuty Incident Merge Tool."""
-    load_env()
 
     env = require_env('PAGERDUTY_API_TOKEN')
     jira_server_url = os.environ.get('JIRA_SERVER_URL')
@@ -1485,62 +1487,62 @@ def main() -> None:
             if SKIP_FILE.exists():
                 skips = PagerDutyMergeTool.load_skipped_ids()
                 SKIP_FILE.unlink()
-                print(f"Cleared {len(skips)} skipped incident(s) from skip list.")
+                logger.info("Cleared %d skipped incident(s) from skip list.", len(skips))
             else:
-                print("No skip list found.")
+                logger.info("No skip list found.")
             sys.exit(0)
         elif arg == '--show-skips':
             skips = PagerDutyMergeTool.load_skipped_ids()
             if skips:
-                print(f"Skipped incidents ({len(skips)}):")
+                logger.info("Skipped incidents (%d):", len(skips))
                 for sid in sorted(skips):
-                    print(f"  {PD_BASE_URL}/{sid}")
+                    logger.info("  %s/%s", PD_BASE_URL, sid)
             else:
-                print("No skipped incidents.")
+                logger.info("No skipped incidents.")
             sys.exit(0)
         elif arg in ('--help', '-h'):
-            print("PagerDuty Incident Merge Tool")
-            print(f"Version: {VERSION}")
-            print()
-            print("Usage: python pd_merge.py [OPTIONS]")
-            print()
-            print("Options:")
-            print("  --dry-run, -n    Simulate merges without making API changes")
-            print("  --verbose, -v    Show extra debug output")
-            print("  --clear-skips    Clear the saved skip list and exit")
-            print("  --show-skips     Show currently skipped incident IDs and exit")
-            print("  --help, -h       Show this help message")
-            print()
-            print("Interactive commands during merge:")
-            print("  y       Merge all incidents in this group")
-            print("  n/skip  Skip this group (remembered for future runs)")
-            print("  all     Merge all remaining groups without asking")
-            print("  select  Pick specific incidents to merge from this group")
+            logger.info("PagerDuty Incident Merge Tool")
+            logger.info("Version: %s", VERSION)
+            logger.info("")
+            logger.info("Usage: python pd_merge.py [OPTIONS]")
+            logger.info("")
+            logger.info("Options:")
+            logger.info("  --dry-run, -n    Simulate merges without making API changes")
+            logger.info("  --verbose, -v    Show extra debug output")
+            logger.info("  --clear-skips    Clear the saved skip list and exit")
+            logger.info("  --show-skips     Show currently skipped incident IDs and exit")
+            logger.info("  --help, -h       Show this help message")
+            logger.info("")
+            logger.info("Interactive commands during merge:")
+            logger.info("  y       Merge all incidents in this group")
+            logger.info("  n/skip  Skip this group (remembered for future runs)")
+            logger.info("  all     Merge all remaining groups without asking")
+            logger.info("  select  Pick specific incidents to merge from this group")
             sys.exit(0)
         else:
-            print(f"Error: Unknown argument '{arg}'. Use --help for usage.")
+            logger.error("Error: Unknown argument '%s'. Use --help for usage.", arg)
             sys.exit(1)
         idx += 1
 
     # Banner
-    print("=" * 70)
-    print(f"PagerDuty Incident Merge Tool v{VERSION}")
+    logger.info("=" * 70)
+    logger.info("PagerDuty Incident Merge Tool v%s", VERSION)
     if dry_run:
-        print("Mode: DRY RUN (no changes will be made)")
+        logger.info("Mode: DRY RUN (no changes will be made)")
     skipped_count = len(PagerDutyMergeTool.load_skipped_ids())
     if skipped_count:
-        print(f"Skip list: {skipped_count} incident(s)")
+        logger.info("Skip list: %d incident(s)", skipped_count)
         try:
             clear_answer = input("  Clear skip list before proceeding? [y/n]: ").strip().lower()
         except (KeyboardInterrupt, EOFError):
             clear_answer = 'n'
         if clear_answer in ('y', 'yes'):
             SKIP_FILE.unlink()
-            print(f"  Cleared {skipped_count} skipped incident(s).")
+            logger.info("  Cleared %d skipped incident(s).", skipped_count)
         else:
-            print(f"  Keeping skip list ({skipped_count} incident(s)).")
-    print("=" * 70)
-    print()
+            logger.info("  Keeping skip list (%d incident(s)).", skipped_count)
+    logger.info("=" * 70)
+    logger.info("")
 
     try:
         tool = PagerDutyMergeTool(
@@ -1552,13 +1554,13 @@ def main() -> None:
         )
         tool.run()
     except KeyboardInterrupt:
-        print("\n\nInterrupted by user.")
+        logger.info("\n\nInterrupted by user.")
         sys.exit(130)
     except RuntimeError as error:
-        print(f"\nError: {error}")
+        logger.error("\nError: %s", error)
         sys.exit(1)
     except Exception as error:
-        print(f"\nUnexpected error: {error}")
+        logger.error("\nUnexpected error: %s", error)
         if verbose:
             import traceback
             traceback.print_exc()

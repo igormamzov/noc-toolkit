@@ -5,8 +5,10 @@ from pathlib import Path
 
 import pytest
 
-# Make tool modules importable
-TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
+# Make tool modules and the project root importable
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+TOOLS_DIR = PROJECT_ROOT / "tools"
+sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(TOOLS_DIR / "common"))
 sys.path.insert(0, str(TOOLS_DIR / "shift-report"))
 sys.path.insert(0, str(TOOLS_DIR / "pd-escalate"))

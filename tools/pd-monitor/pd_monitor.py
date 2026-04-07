@@ -6,6 +6,7 @@ Automatically monitors triggered PagerDuty incidents and acknowledges them
 with appropriate comments. Runs continuously for 1 hour.
 """
 
+import logging
 import os
 import sys
 import json
@@ -16,10 +17,12 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-from noc_utils import load_env, new_pd_client
+from noc_utils import new_pd_client, setup_logging
 
 # Version information
 VERSION = "0.1.4"
+
+logger = setup_logging(name=__name__)
 
 # Title patterns for silent acknowledge (ack only, no comment).
 # If an incident title contains any of these substrings (case-insensitive),
@@ -69,7 +72,7 @@ ALL_COMMENTS = COMMENTS_NORMAL + COMMENTS_TYPO
 try:
     import pagerduty
 except ImportError:
-    print("Error: Missing required dependencies. Please run: pip install -r requirements.txt")
+    logger.error("Error: Missing required dependencies. Please run: pip install -r requirements.txt")
     sys.exit(1)
 
 
@@ -180,7 +183,7 @@ class PagerDutyMonitor:
                 f.write(f"  ID: {incident_id}\n")
                 f.write(f"  Title: {incident_title}\n\n")
         except IOError as e:
-            print(f"Warning: Failed to write to output file: {e}", file=sys.stderr)
+            logger.warning(f"Failed to write to output file: {e}")
 
     def get_triggered_incidents(self) -> List[Dict]:
         """
@@ -199,7 +202,7 @@ class PagerDutyMonitor:
             incidents = self.pagerduty_session.list_all('incidents', params=params)
             return list(incidents)
         except pagerduty.Error as e:
-            print(f"Error fetching incidents: {e}", file=sys.stderr)
+            logger.error(f"Error fetching incidents: {e}")
             return []
 
     def get_incident_notes(self, incident_id: str) -> List[Dict]:
@@ -216,7 +219,7 @@ class PagerDutyMonitor:
             notes = self.pagerduty_session.list_all(f'incidents/{incident_id}/notes')
             return list(notes)
         except pagerduty.Error as e:
-            print(f"Error fetching notes for {incident_id}: {e}", file=sys.stderr)
+            logger.error(f"Error fetching notes for {incident_id}: {e}")
             return []
 
     def check_has_comments(self, incident_id: str) -> bool:
@@ -285,7 +288,7 @@ class PagerDutyMonitor:
             self.pagerduty_session.rpost(f'incidents/{incident_id}/notes', json=note_data)
             return True
         except pagerduty.Error as e:
-            print(f"Error adding note to {incident_id}: {e}", file=sys.stderr)
+            logger.error(f"Error adding note to {incident_id}: {e}")
             return False
 
     def acknowledge_incident(self, incident_id: str) -> bool:
@@ -316,10 +319,10 @@ class PagerDutyMonitor:
             self.pagerduty_session.rput('incidents', json=ack_data, headers=headers)
             return True
         except pagerduty.Error as e:
-            print(f"Error acknowledging incident {incident_id}: {e}", file=sys.stderr)
+            logger.error(f"Error acknowledging incident {incident_id}: {e}")
             return False
         except Exception as e:
-            print(f"Error acknowledging incident {incident_id}: {e}", file=sys.stderr)
+            logger.error(f"Error acknowledging incident {incident_id}: {e}")
             return False
 
     def process_incident(self, incident: Dict) -> Dict:
@@ -546,16 +549,15 @@ class PagerDutyMonitor:
             incident_id = incident['id']
             incident_title = incident.get('title', 'Unknown')
 
-            if self.verbose:
-                print(f"\n  Checking: {incident_title[:60]}...")
-                print(f"  ID: {incident_id}")
+            logger.debug(f"Checking: {incident_title[:60]}...")
+            logger.debug(f"ID: {incident_id}")
 
             # Process incident
             result = self.process_incident(incident)
 
             if result['success']:
-                # Print URL and action taken
-                print(f"  {result['url']}")
+                # Log URL and action taken
+                logger.info(f"  {result['url']}")
                 action_detail = []
                 if result.get('comment_added'):
                     action_detail.append("comment added")
@@ -563,7 +565,7 @@ class PagerDutyMonitor:
                     action_detail.append("logged to file")
                 if not result.get('comment_added') and not result.get('logged_to_file'):
                     action_detail.append("acknowledged")
-                print(f"  → {result['message']} ({', '.join(action_detail)})")
+                logger.info(f"  → {result['message']} ({', '.join(action_detail)})")
 
                 # Update summary
                 if result['action'] == 'new_incident':
@@ -579,8 +581,8 @@ class PagerDutyMonitor:
                     summary['already_processed'] += 1
                 else:
                     summary['errors'].append(result['message'])
-                    print(f"  {result['url']}")
-                    print(f"  ❌ {result['message']}")
+                    logger.info(f"  {result['url']}")
+                    logger.error(f"  ❌ {result['message']}")
 
         return summary
 
@@ -618,12 +620,12 @@ class PagerDutyMonitor:
         total_duration = duration_minutes * 60
         check_count = 0
 
-        print(f"Starting continuous monitoring for {duration_minutes} minutes...")
-        print(f"Checking every {self.check_interval_seconds} seconds")
-        print(f"User ID: {self.user_id}")
-        print(f"Output file: {self.output_file}")
-        print("=" * 60)
-        print()  # Extra line before progress bar
+        logger.info(f"Starting continuous monitoring for {duration_minutes} minutes...")
+        logger.info(f"Checking every {self.check_interval_seconds} seconds")
+        logger.info(f"User ID: {self.user_id}")
+        logger.info(f"Output file: {self.output_file}")
+        logger.info("=" * 60)
+        logger.info("")  # Extra line before progress bar
 
         try:
             while time.time() < end_time:
@@ -636,8 +638,8 @@ class PagerDutyMonitor:
                     remaining_seconds = int(end_time - current_time)
                     remaining_minutes = remaining_seconds // 60
                     remaining_secs = remaining_seconds % 60
-                    print(f"\n[Check #{check_count}] Time remaining: {remaining_minutes}m {remaining_secs}s")
-                    print("-" * 60)
+                    logger.info(f"\n[Check #{check_count}] Time remaining: {remaining_minutes}m {remaining_secs}s")
+                    logger.info("-" * 60)
 
                 # Check incidents
                 summary = self.check_incidents_once()
@@ -647,22 +649,22 @@ class PagerDutyMonitor:
                     # Clear progress bar line and show incident info
                     if not self.background:
                         print("\r" + " " * 80 + "\r", end='')  # Clear line
-                    print(f"\n  Found {summary['total']} triggered incident(s)")
+                    logger.info(f"\n  Found {summary['total']} triggered incident(s)")
                     if summary['new_incidents'] > 0:
-                        print(f"  ✓ New incidents (comment added): {summary['new_incidents']}")
+                        logger.info(f"  ✓ New incidents (comment added): {summary['new_incidents']}")
                     if summary['silent_ack'] > 0:
-                        print(f"  ✓ Silent ack (no comment): {summary['silent_ack']}")
+                        logger.info(f"  ✓ Silent ack (no comment): {summary['silent_ack']}")
                     if summary['acknowledged'] > 0:
-                        print(f"  ✓ Acknowledged (no comment): {summary['acknowledged']}")
+                        logger.info(f"  ✓ Acknowledged (no comment): {summary['acknowledged']}")
                     if summary['needs_attention'] > 0:
-                        print(f"  ⚠️  Need attention (logged to file): {summary['needs_attention']}")
+                        logger.info(f"  ⚠️  Need attention (logged to file): {summary['needs_attention']}")
                     if summary['errors']:
-                        print(f"  ❌ Errors: {len(summary['errors'])}")
-                    print()  # Extra line after incident info
+                        logger.warning(f"  ❌ Errors: {len(summary['errors'])}")
+                    logger.info("")  # Extra line after incident info
                 else:
                     # Only show "no incidents" in details mode
                     if self.details:
-                        print("  No triggered incidents found")
+                        logger.info("  No triggered incidents found")
 
                 # Wait for next check (unless we're at the end)
                 if time.time() < end_time:
@@ -688,15 +690,15 @@ class PagerDutyMonitor:
                                 time.sleep(1)
 
         except KeyboardInterrupt:
-            print("\n\n⚠️  Monitoring interrupted by user")
+            logger.warning("\n\n⚠️  Monitoring interrupted by user")
             raise
 
         # Clear progress bar and show completion
         if not self.background:
             print("\r" + " " * 80 + "\r", end='')  # Clear line
-        print("\n" + "=" * 60)
-        print(f"Monitoring completed after {check_count} checks")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info(f"Monitoring completed after {check_count} checks")
+        logger.info("=" * 60)
 
 
 def load_config() -> Dict:
@@ -801,16 +803,16 @@ def show_duration_menu() -> int:
     Returns:
         Selected duration in minutes
     """
-    print("\n" + "=" * 60)
-    print("Select Monitoring Duration")
-    print("=" * 60)
-    print("  1. 1 hour (60 minutes)")
-    print("  2. 2 hours (120 minutes)")
-    print("  3. 4 hours (240 minutes)")
-    print("  4. 8 hours (480 minutes)")
-    print("  5. 12 hours (720 minutes)")
-    print("  6. Custom (enter minutes)")
-    print("=" * 60)
+    logger.info("\n" + "=" * 60)
+    logger.info("Select Monitoring Duration")
+    logger.info("=" * 60)
+    logger.info("  1. 1 hour (60 minutes)")
+    logger.info("  2. 2 hours (120 minutes)")
+    logger.info("  3. 4 hours (240 minutes)")
+    logger.info("  4. 8 hours (480 minutes)")
+    logger.info("  5. 12 hours (720 minutes)")
+    logger.info("  6. Custom (enter minutes)")
+    logger.info("=" * 60)
 
     while True:
         try:
@@ -835,22 +837,19 @@ def show_duration_menu() -> int:
                         if 1 <= duration <= 720:
                             return duration
                         else:
-                            print("❌ Please enter a value between 1 and 720 minutes.")
+                            logger.info("❌ Please enter a value between 1 and 720 minutes.")
                     except ValueError:
-                        print("❌ Invalid input. Please enter a number.")
+                        logger.info("❌ Invalid input. Please enter a number.")
             else:
-                print("❌ Invalid choice. Please enter a number between 1 and 6.")
+                logger.info("❌ Invalid choice. Please enter a number between 1 and 6.")
 
         except KeyboardInterrupt:
-            print("\n\n⚠️  Interrupted by user.")
+            logger.warning("\n\n⚠️  Interrupted by user.")
             sys.exit(130)
 
 
 def main() -> None:
     """Main entry point."""
-    # Load environment variables
-    load_env()
-
     # Parse arguments
     args = parse_args()
 
@@ -859,8 +858,8 @@ def main() -> None:
 
     # Validate API token
     if not config['pagerduty_api_token']:
-        print("Error: PAGERDUTY_API_TOKEN not found in environment", file=sys.stderr)
-        print("\nPlease set this in your .env file or environment.", file=sys.stderr)
+        logger.error("PAGERDUTY_API_TOKEN not found in environment")
+        logger.error("Please set this in your .env file or environment.")
         sys.exit(1)
 
     # Override config with CLI arguments
@@ -885,7 +884,7 @@ def main() -> None:
     try:
         monitor = PagerDutyMonitor(**config)
     except (RuntimeError, pagerduty.Error) as e:
-        print(f"Error: {e}", file=sys.stderr)
+        logger.error(str(e))
         sys.exit(1)
 
     # If duration not specified and not single-check mode, show menu
@@ -896,56 +895,56 @@ def main() -> None:
             args.duration = show_duration_menu()
 
     # Print header
-    print("=" * 60)
-    print("PagerDuty Monitor - Triggered Incident Handler")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("PagerDuty Monitor - Triggered Incident Handler")
+    logger.info("=" * 60)
     if config['comment_pattern'].lower() == 'working on it':
-        print(f"Comment mode: randomized ({len(COMMENTS_NORMAL)} phrases + {len(COMMENTS_TYPO)} typo variants)")
+        logger.info(f"Comment mode: randomized ({len(COMMENTS_NORMAL)} phrases + {len(COMMENTS_TYPO)} typo variants)")
     else:
-        print(f"Comment pattern: \"{config['comment_pattern']}\"")
-    print(f"Mode: {'DRY RUN' if config['dry_run'] else 'LIVE'}")
+        logger.info(f"Comment pattern: \"{config['comment_pattern']}\"")
+    logger.info(f"Mode: {'DRY RUN' if config['dry_run'] else 'LIVE'}")
 
     if args.once:
-        print(f"Mode: Single check")
+        logger.info("Mode: Single check")
     else:
-        print(f"Duration: {args.duration} minutes")
-        print(f"Check interval: {config['check_interval_seconds']} seconds")
+        logger.info(f"Duration: {args.duration} minutes")
+        logger.info(f"Check interval: {config['check_interval_seconds']} seconds")
 
-    print("=" * 60)
+    logger.info("=" * 60)
 
     # Run monitor
     try:
         if args.once:
             # Single check mode
-            print("\nPerforming single check...")
+            logger.info("\nPerforming single check...")
             summary = monitor.check_incidents_once()
 
             # Print summary
-            print("\n" + "=" * 60)
-            print("Summary")
-            print("=" * 60)
-            print(f"Total triggered incidents: {summary['total']}")
-            print(f"New incidents (comment added): {summary['new_incidents']}")
-            print(f"Silent ack (no comment): {summary['silent_ack']}")
-            print(f"Acknowledged (no comment): {summary['acknowledged']}")
-            print(f"Need attention (logged to file): {summary['needs_attention']}")
-            print(f"Errors: {len(summary['errors'])}")
+            logger.info("\n" + "=" * 60)
+            logger.info("Summary")
+            logger.info("=" * 60)
+            logger.info(f"Total triggered incidents: {summary['total']}")
+            logger.info(f"New incidents (comment added): {summary['new_incidents']}")
+            logger.info(f"Silent ack (no comment): {summary['silent_ack']}")
+            logger.info(f"Acknowledged (no comment): {summary['acknowledged']}")
+            logger.info(f"Need attention (logged to file): {summary['needs_attention']}")
+            logger.info(f"Errors: {len(summary['errors'])}")
 
             if summary['errors']:
-                print("\n❌ Errors:")
+                logger.warning("\n❌ Errors:")
                 for error in summary['errors']:
-                    print(f"  - {error}")
+                    logger.warning(f"  - {error}")
 
-            print("=" * 60)
+            logger.info("=" * 60)
         else:
             # Continuous monitoring mode
             monitor.monitor_continuously(duration_minutes=args.duration)
 
     except KeyboardInterrupt:
-        print("\n\nInterrupted by user", file=sys.stderr)
+        logger.warning("Interrupted by user")
         sys.exit(130)
     except Exception as e:
-        print(f"\nError: {e}", file=sys.stderr)
+        logger.error(str(e))
         import traceback
         traceback.print_exc()
         sys.exit(1)

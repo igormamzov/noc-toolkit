@@ -8,6 +8,7 @@ Monitors Jira escalation tickets (DSSD by default) and:
 3. Detects repeat pings and shows the last assignee response in the report
 """
 
+import logging
 import os
 import random
 import sys
@@ -19,11 +20,14 @@ VERSION = "0.1.0"
 
 try:
     from jira.exceptions import JIRAError
-    from noc_utils import load_env, require_env, new_jira_client
+    from noc_utils import require_env, new_jira_client, setup_logging
 except ImportError as import_error:
-    print(f"Error: Missing required dependencies. Please run: pip install -r requirements.txt")
-    print(f"Details: {import_error}")
+    logging.basicConfig()
+    logging.error("Missing required dependencies. Please run: pip install -r requirements.txt")
+    logging.error("Details: %s", import_error)
     sys.exit(1)
+
+logger = setup_logging(name=__name__)
 
 # Phrases for pinging assignees — randomly selected per ticket
 PING_PHRASES: List[str] = [
@@ -213,15 +217,15 @@ class TicketWatch:
         comment_body = f"[~{assignee_name}] {phrase}"
 
         if self.dry_run:
-            print(f"  [DRY-RUN] Would comment on {issue_key}: {comment_body}")
+            logger.info("  [DRY-RUN] Would comment on %s: %s", issue_key, comment_body)
             return phrase
 
         try:
             self.jira_client.add_comment(issue_key, comment_body)
-            print(f"  Commented on {issue_key}")
+            logger.info("  Commented on %s", issue_key)
             return phrase
         except JIRAError as error:
-            print(f"  Warning: Failed to comment on {issue_key}: {error}")
+            logger.warning("  Warning: Failed to comment on %s: %s", issue_key, error)
             return phrase
 
     def search_chicken_curry(self) -> List[Any]:
@@ -257,18 +261,18 @@ class TicketWatch:
             List of stale ticket results
         """
         mode_label = "[DRY-RUN] " if self.dry_run else ""
-        print(f"\n{mode_label}Ticket Watch v{VERSION}")
-        print("=" * 50)
-        print("  CHICKEN CURRY MODE")
-        print("  Target: Basavaraj.Swamy | All projects | Stale > 3d")
-        print("=" * 50)
+        logger.info("\n%sTicket Watch v%s", mode_label, VERSION)
+        logger.info("=" * 50)
+        logger.info("  CHICKEN CURRY MODE")
+        logger.info("  Target: Basavaraj.Swamy | All projects | Stale > 3d")
+        logger.info("=" * 50)
 
-        print(f"\nSearching all projects...")
+        logger.info("\nSearching all projects...")
         issues = self.search_chicken_curry()
-        print(f"Found {len(issues)} stale tickets")
+        logger.info("Found %d stale tickets", len(issues))
 
         if not issues:
-            print("\nNo stale tickets found. Impressive!")
+            logger.info("\nNo stale tickets found. Impressive!")
             return []
 
         results: List[Dict[str, Any]] = []
@@ -300,20 +304,20 @@ class TicketWatch:
             List of classified ticket results
         """
         mode_label = "[DRY-RUN] " if self.dry_run else ""
-        print(f"\n{mode_label}Ticket Watch v{VERSION}")
-        print("=" * 50)
-        print(f"Project: {self.project}")
-        print(f"Reporters: {', '.join(self.reporters)}")
-        print(f"Unassigned threshold: {self.unassigned_hours}h")
-        print(f"Stale threshold: {self.stale_days} days")
+        logger.info("\n%sTicket Watch v%s", mode_label, VERSION)
+        logger.info("=" * 50)
+        logger.info("Project: %s", self.project)
+        logger.info("Reporters: %s", ", ".join(self.reporters))
+        logger.info("Unassigned threshold: %sh", self.unassigned_hours)
+        logger.info("Stale threshold: %s days", self.stale_days)
 
         # Step 1: Search tickets
-        print(f"\nSearching {self.project} tickets...")
+        logger.info("\nSearching %s tickets...", self.project)
         issues = self.search_tickets()
-        print(f"Found {len(issues)} open tickets")
+        logger.info("Found %d open tickets", len(issues))
 
         if not issues:
-            print("\nNo tickets to report.")
+            logger.info("\nNo tickets to report.")
             return []
 
         # Step 2: Classify each ticket
@@ -344,72 +348,72 @@ class TicketWatch:
 
         total = len(unassigned) + len(stale) + len(pinged)
 
-        print(f"\n{'=' * 50}")
-        print(f"  Escalated Ticket Watch Report")
-        print(f"{'=' * 50}")
+        logger.info("\n%s", "=" * 50)
+        logger.info("  Escalated Ticket Watch Report")
+        logger.info("%s", "=" * 50)
 
         if total == 0:
-            print("\nAll tickets are in good shape. Nothing to report.")
+            logger.info("\nAll tickets are in good shape. Nothing to report.")
             return
 
         counter = 0
 
         if unassigned:
-            print(f"\n--- UNASSIGNED (created > {self.unassigned_hours}h ago) ---")
+            logger.info("\n--- UNASSIGNED (created > %sh ago) ---", self.unassigned_hours)
             for ticket in unassigned:
                 counter += 1
                 age_str = self._format_age(ticket["age_hours"])
                 created_str = ticket["created"].strftime("%Y-%m-%d %H:%M UTC")
-                print(f"\n{counter}. {self.jira_base_url}/{ticket['key']}")
-                print(f"   Summary: {ticket['summary']}")
-                print(f"   Created: {created_str} ({age_str})")
-                print(f"   Status: Unassigned")
+                logger.info("\n%d. %s/%s", counter, self.jira_base_url, ticket["key"])
+                logger.info("   Summary: %s", ticket["summary"])
+                logger.info("   Created: %s (%s)", created_str, age_str)
+                logger.info("   Status: Unassigned")
 
         if stale:
-            print(f"\n--- STALE (no update > {self.stale_days} days) ---")
+            logger.info("\n--- STALE (no update > %s days) ---", self.stale_days)
             for ticket in stale:
                 counter += 1
                 days_str = self._format_days(ticket["days_since_comment"])
-                print(f"\n{counter}. {self.jira_base_url}/{ticket['key']}")
-                print(f"   Summary: {ticket['summary']}")
-                print(f"   Assignee: {ticket['assignee']}")
+                logger.info("\n%d. %s/%s", counter, self.jira_base_url, ticket["key"])
+                logger.info("   Summary: %s", ticket["summary"])
+                logger.info("   Assignee: %s", ticket["assignee"])
                 if ticket["last_comment_date"]:
                     comment_date = ticket["last_comment_date"].strftime("%Y-%m-%d")
-                    print(f"   Last comment: {comment_date} ({days_str})")
+                    logger.info("   Last comment: %s (%s)", comment_date, days_str)
                 else:
-                    print(f"   Last comment: none ({days_str})")
+                    logger.info("   Last comment: none (%s)", days_str)
                 if not self.no_comment:
-                    print(f"   Action: Pinged assignee")
+                    logger.info("   Action: Pinged assignee")
 
         if pinged:
-            print(f"\n--- REPEAT PING (previously pinged, still stale) ---")
+            logger.info("\n--- REPEAT PING (previously pinged, still stale) ---")
             for ticket in pinged:
                 counter += 1
                 days_str = self._format_days(ticket["days_since_comment"])
                 ping_label = f"{ticket['ping_count'] + 1}{'st' if ticket['ping_count'] == 0 else 'nd' if ticket['ping_count'] == 1 else 'rd' if ticket['ping_count'] == 2 else 'th'} ping"
-                print(f"\n{counter}. {self.jira_base_url}/{ticket['key']}")
-                print(f"   Summary: {ticket['summary']}")
-                print(f"   Assignee: {ticket['assignee']}")
+                logger.info("\n%d. %s/%s", counter, self.jira_base_url, ticket["key"])
+                logger.info("   Summary: %s", ticket["summary"])
+                logger.info("   Assignee: %s", ticket["assignee"])
                 if ticket["last_comment_date"]:
                     comment_date = ticket["last_comment_date"].strftime("%Y-%m-%d")
-                    print(f"   Last comment: {comment_date} ({days_str})")
+                    logger.info("   Last comment: %s (%s)", comment_date, days_str)
                 else:
-                    print(f"   Last comment: none ({days_str})")
+                    logger.info("   Last comment: none (%s)", days_str)
                 if not self.no_comment:
-                    print(f"   Action: Repeat ping ({ping_label})")
+                    logger.info("   Action: Repeat ping (%s)", ping_label)
                 if ticket["last_assignee_response"]:
                     response_text = ticket["last_assignee_response"]["body"]
                     response_date = ticket["last_assignee_response"]["date"]
                     if len(response_text) > 70:
                         response_text = response_text[:70] + "..."
                     date_str = response_date.strftime("%Y-%m-%d")
-                    print(f"   Last assignee response ({date_str}): \"{response_text}\"")
+                    logger.info("   Last assignee response (%s): \"%s\"", date_str, response_text)
 
-        print(f"\n{'=' * 50}")
-        print(f"Total: {total} ticket(s) need attention")
-        print(f"  Unassigned: {len(unassigned)}")
-        print(f"  Stale: {len(stale)}")
-        print(f"  Repeat ping: {len(pinged)}")
+        logger.info("\n%s", "=" * 50)
+        logger.info("Total: %d ticket(s) need attention", total)
+        logger.info("  Unassigned: %d", len(unassigned))
+        logger.info("  Stale: %d", len(stale))
+        logger.info("  Repeat ping: %d", len(pinged))
 
     def _get_last_comment_date(self, comments: List[Any]) -> Optional[datetime]:
         """Get the datetime of the most recent comment."""
@@ -519,8 +523,6 @@ def main() -> None:
     """Main entry point for the CLI tool."""
     import argparse
 
-    load_env()
-
     parser = argparse.ArgumentParser(
         description="Ticket Watch — Monitor escalation tickets for unassigned/stale states",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -585,10 +587,10 @@ def main() -> None:
         else:
             tool.run()
     except RuntimeError as error:
-        print(f"\nError: {error}", file=sys.stderr)
+        logger.error(str(error))
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\nAborted by user.")
+        logger.info("\nAborted by user.")
         sys.exit(130)
 
 

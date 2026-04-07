@@ -1,5 +1,7 @@
 """Tests for pagerduty-job-extractor (pd_jobs.py)."""
 
+import builtins
+import importlib
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -295,19 +297,20 @@ class TestJobPattern:
 class TestMain:
     @patch("pd_jobs.PDJobs")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
-    def test_successful_run(self, mock_cls, capsys):
-        """main() prints jobs to stdout."""
+    def test_successful_run(self, mock_cls, caplog):
+        """main() logs jobs at INFO level."""
+        import logging
         mock_instance = MagicMock()
         mock_instance.get_jobs_from_incident.return_value = ["jb_one", "jb_two"]
         mock_cls.return_value = mock_instance
 
         with patch("sys.argv", ["pd_jobs.py", "P123"]):
             from pd_jobs import main
-            main()
+            with caplog.at_level(logging.INFO, logger="pd_jobs"):
+                main()
 
-        captured = capsys.readouterr()
-        assert "jb_one" in captured.out
-        assert "jb_two" in captured.out
+        assert "jb_one" in caplog.text
+        assert "jb_two" in caplog.text
 
     @patch("pd_jobs.PDJobs")
     @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
@@ -327,11 +330,10 @@ class TestMain:
     def test_missing_token_exits(self):
         """main() exits when PAGERDUTY_API_TOKEN is not set."""
         with patch("sys.argv", ["pd_jobs.py", "P123"]):
-            with patch("pd_jobs.load_env"):
-                from pd_jobs import main
-                with pytest.raises(SystemExit) as exc_info:
-                    main()
-                assert exc_info.value.code == 1
+            from pd_jobs import main
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
 
     def test_no_args_exits(self):
         """main() exits when no incident ID is provided."""
@@ -356,3 +358,54 @@ class TestMain:
                     main()
 
             mock_instance.get_jobs_from_incident.assert_called_once_with("PXYZ123")
+
+    @patch("pd_jobs.PDJobs")
+    @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
+    def test_pagerduty_error_exits(self, mock_cls):
+        """main() exits with code 1 when pagerduty.Error is raised."""
+        import pagerduty
+        mock_instance = MagicMock()
+        mock_instance.get_jobs_from_incident.side_effect = pagerduty.Error("API down")
+        mock_cls.return_value = mock_instance
+
+        with patch("sys.argv", ["pd_jobs.py", "P123"]):
+            from pd_jobs import main
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+
+    @patch("pd_jobs.PDJobs")
+    @patch.dict("os.environ", {"PAGERDUTY_API_TOKEN": "test-token"})
+    def test_unexpected_exception_exits(self, mock_cls):
+        """main() exits with code 1 on unexpected exceptions."""
+        mock_instance = MagicMock()
+        mock_instance.get_jobs_from_incident.side_effect = RuntimeError("unexpected boom")
+        mock_cls.return_value = mock_instance
+
+        with patch("sys.argv", ["pd_jobs.py", "P123"]):
+            from pd_jobs import main
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+
+
+# ===========================================================================
+# Import error fallback (lines 20-24)
+# ===========================================================================
+
+class TestImportErrorFallback:
+    def test_missing_pagerduty_exits(self):
+        """Module exits with code 1 when pagerduty package is unavailable."""
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "pagerduty":
+                raise ImportError("No module named 'pagerduty'")
+            return real_import(name, *args, **kwargs)
+
+        # Remove cached module so importlib.reload re-executes module-level code
+        import pd_jobs
+        with patch.object(builtins, "__import__", side_effect=fake_import):
+            with pytest.raises(SystemExit) as exc_info:
+                importlib.reload(pd_jobs)
+            assert exc_info.value.code == 1

@@ -1,0 +1,62 @@
+# =============================================================================
+# NOC Toolkit — Configuration File
+# =============================================================================
+# Copy this file to config.yaml and fill in your values.
+#
+# Values can be specified as:
+#   - Raw literals:       JIRA_SERVER_URL: https://jira.example.com
+#   - Env-var references: PAGERDUTY_API_TOKEN: ${PAGERDUTY_API_TOKEN}
+#   - Mixed:              JIRA_BROWSE_URL: ${JIRA_SERVER_URL}/browse
+#
+# Env-var references (${VAR}) are resolved at startup from the process
+# environment (including any .env file loaded before config.yaml).
+# Keys whose env var is unset are omitted, so tools fall back to their
+# own validation and error messages.
+#
+# IMPORTANT: Never commit config.yaml with real credentials!
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Tokens & Credentials
+# ---------------------------------------------------------------------------
+tokens:
+  # PagerDuty  (used by: pd-sync, pd-jobs, pd-monitor, pd-merge, pd-escalate, pd-resolve)
+  PAGERDUTY_API_TOKEN: ${PAGERDUTY_API_TOKEN}
+
+  # Jira Server / Data Center
+  JIRA_SERVER_URL: ${JIRA_SERVER_URL}
+  JIRA_PERSONAL_ACCESS_TOKEN: ${JIRA_PERSONAL_ACCESS_TOKEN}
+
+  # Jira Cloud (alternative auth — uncomment if using Cloud)
+  # JIRA_EMAIL: ${JIRA_EMAIL}
+  # JIRA_API_TOKEN: ${JIRA_API_TOKEN}
+
+  # Databricks  (used by: freshness)
+  # DATABRICKS_HOST: ${DATABRICKS_HOST}
+  # DATABRICKS_TOKEN: ${DATABRICKS_TOKEN}
+  # DATABRICKS_WAREHOUSE_ID: ${DATABRICKS_WAREHOUSE_ID}
+
+  # Google Sheets integration  (used by: shift-report online mode)
+  # GSHEET_WEBAPP_URL: ${GSHEET_WEBAPP_URL}
+  # GSHEET_API_KEY: ${GSHEET_API_KEY}
+
+# ---------------------------------------------------------------------------
+# Tool Settings (optional overrides)
+# ---------------------------------------------------------------------------
+settings:
+  # Ticket Watch — comma-separated reporter display names
+  # TICKET_WATCH_REPORTERS: Igor Mamzov,Ilya Klimov,Pavel Viktorov
+
+  # Ticket Watch — Jira project key (default: DSSD)
+  # TICKET_WATCH_PROJECT: DSSD
+
+  # PD Resolve — AWS / MWAA settings
+  # AWS_PROFILE: ${AWS_PROFILE}
+  # MWAA_ENVIRONMENT_NAME: ${MWAA_ENVIRONMENT_NAME}
+  # MWAA_REGION: ${MWAA_REGION}
+
+  # Shift Report — path to Excel report
+  # NOC_REPORT_PATH: ~/Downloads/NOC endshift report.xlsx
+
+  # General
+  # LOG_LEVEL: INFO

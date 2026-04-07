@@ -16,28 +16,19 @@ from datetime import datetime
 from typing import Deque, List, Dict, Optional
 from pathlib import Path
 
-# Determine key directories early (needed for .env and debug log)
+# Determine key directories early (needed for .env, debug log, and sys.path setup)
 _FROZEN = getattr(sys, 'frozen', False)
 _EXE_DIR = Path(sys.executable).parent if _FROZEN else Path(__file__).parent.resolve()
 _MEIPASS = getattr(sys, '_MEIPASS', None)
 
-# Load environment variables from centralized .env file
-_ENV_LOADED = False
-_ENV_MESSAGE = ""
-
+# Deferred: .env is loaded selectively during _load_config() based on
+# which env-var references config.yaml actually contains.
+_DOTENV_AVAILABLE = False
 try:
-    from dotenv import load_dotenv
-    # When running as PyInstaller EXE, look for .env next to the executable
-    # (not in the temp extraction dir where __file__ points)
-    env_path = _EXE_DIR / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-        _ENV_LOADED = True
-        _ENV_MESSAGE = f"Environment loaded from: {env_path.name}"
-    else:
-        _ENV_MESSAGE = "No .env file found (copy .env.example to .env and configure)"
-except ImportError:
-    _ENV_MESSAGE = "Warning: python-dotenv not installed (pip install python-dotenv)"
+    from dotenv import dotenv_values
+    _DOTENV_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    pass  # pragma: no cover
 
 # Version information
 VERSION = "0.6.1"
@@ -47,6 +38,15 @@ TOOLKIT_NAME = "NOC Toolkit"
 SCRIPT_DIR = Path(_MEIPASS) if _MEIPASS else Path(__file__).parent.resolve()
 TOOLS_DIR = SCRIPT_DIR / "tools"
 COMMON_DIR = TOOLS_DIR / "common"
+
+# Ensure tools/common is importable so noc_utils can be resolved
+_common_str = str(COMMON_DIR)
+if _common_str not in sys.path:
+    sys.path.insert(0, _common_str)  # pragma: no cover
+
+from noc_utils import setup_logging, load_config, extract_env_references  # noqa: E402 — must follow sys.path setup
+
+logger = setup_logging(name=__name__)
 
 
 def _write_debug_log() -> None:
@@ -79,13 +79,13 @@ def _write_debug_log() -> None:
         lines.append(f"TOOLS_DIR:       {TOOLS_DIR}")
         lines.append(f"TOOLS_DIR exists:{TOOLS_DIR.exists()}")
 
-        # .env info
+        # Config / env info
+        env_path = _EXE_DIR / ".env"
+        config_path = _EXE_DIR / "config.yaml"
         lines.append("")
-        lines.append("--- Environment ---")
-        lines.append(f"env_path:        {env_path}")
-        lines.append(f"env_path exists: {env_path.exists()}")
-        lines.append(f"ENV_LOADED:      {_ENV_LOADED}")
-        lines.append(f"ENV_MESSAGE:     {_ENV_MESSAGE}")
+        lines.append("--- Configuration ---")
+        lines.append(f"config.yaml:     {config_path} (exists: {config_path.exists()})")
+        lines.append(f".env:            {env_path} (exists: {env_path.exists()})")
 
         # Check which credential env vars are set (masked)
         env_vars = [
@@ -120,8 +120,8 @@ def _write_debug_log() -> None:
 
         log_path.write_text("\n".join(lines), encoding="utf-8")
     except Exception as exc:
-        # Debug log must never crash the toolkit
-        print(f"  (debug log failed: {exc})")
+        # Debug log must never crash the toolkit — use logger as last resort
+        logger.warning("debug log failed: %s", exc)
 
 
 def _append_debug(message: str) -> None:
@@ -186,8 +186,15 @@ class MonitorBackground:
         """Number of output lines not yet viewed by the user."""
         return self._new_line_count
 
-    def start(self, tool_path: Path, duration_minutes: int) -> bool:
+    def start(self, tool_path: Path, duration_minutes: int,
+              base_env: Optional[Dict[str, str]] = None) -> bool:
         """Launch pd-monitor as a background subprocess.
+
+        Args:
+            tool_path: Path to the pd_monitor.py script.
+            duration_minutes: How long to run.
+            base_env: Pre-built environment dict (from ``_tool_env()``).
+                Falls back to ``os.environ.copy()`` when *None*.
 
         Returns True on success, False if already running or failed to start.
         """
@@ -212,7 +219,7 @@ class MonitorBackground:
             '--background',
         ]
 
-        env = os.environ.copy()
+        env = base_env if base_env is not None else os.environ.copy()
         extra = str(COMMON_DIR)
         env["PYTHONPATH"] = extra + os.pathsep + env.get("PYTHONPATH", "")
 
@@ -228,9 +235,9 @@ class MonitorBackground:
                 env=env,
             )
         except FileNotFoundError as exc:
-            print(f"  Error starting background monitor: {exc}")
+            logger.error("  Error starting background monitor: %s", exc)
             if _FROZEN:
-                print("  Note: Background mode requires python3 on PATH in EXE mode.")
+                logger.error("  Note: Background mode requires python3 on PATH in EXE mode.")
             return False
 
         self._reader_thread = threading.Thread(
@@ -290,7 +297,60 @@ class NOCToolkit:
     def __init__(self):
         self.tools: List[ToolDefinition] = []
         self._monitor_bg: MonitorBackground = MonitorBackground()
+        self._config: Dict[str, str] = self._load_config()
         self._load_tools()
+
+    def _load_config(self) -> Dict[str, str]:
+        """Load config.yaml once at startup.
+
+        Flow:
+        1. Read config.yaml and extract ``${VAR}`` references.
+        2. If any references exist **and** a ``.env`` file is present, load
+           only the referenced variables from ``.env`` into ``os.environ``.
+        3. Resolve the full config (env vars are now available).
+
+        Resolved values are **not** written into ``os.environ``.  Instead
+        they are injected into the subprocess environment by :meth:`run_tool`
+        and :meth:`MonitorBackground.start` at launch time.
+
+        Returns:
+            Dict of resolved config key-value pairs.
+        """
+        config_path = _EXE_DIR / "config.yaml"
+        config_str = str(config_path) if config_path.is_file() else None
+
+        try:
+            # Step 1 — identify which env vars the config references
+            env_refs = extract_env_references(config_str)
+
+            # Step 2 — selectively load only referenced vars from .env
+            if env_refs and _DOTENV_AVAILABLE:
+                env_file = _EXE_DIR / ".env"
+                if env_file.is_file():
+                    all_dotenv: Dict[str, Optional[str]] = dotenv_values(env_file)
+                    for var_name in env_refs:
+                        dotenv_val = all_dotenv.get(var_name)
+                        if var_name not in os.environ and dotenv_val is not None:
+                            os.environ[var_name] = dotenv_val
+
+            # Step 3 — resolve config (reads os.environ for ${VAR} values)
+            return load_config(config_str)
+        except Exception as exc:
+            logger.warning("Failed to load config.yaml: %s", exc)
+            return {}
+
+    def _tool_env(self) -> Dict[str, str]:
+        """Build an environment dict for launching a tool subprocess.
+
+        Starts from the current ``os.environ`` and overlays resolved config
+        values.  Config values do **not** overwrite variables that are
+        already set in the real environment.
+        """
+        env = os.environ.copy()
+        for key, value in self._config.items():
+            if key not in env or not env[key]:
+                env[key] = value
+        return env
 
     def _load_tools(self) -> None:
         """Load available tools."""
@@ -377,31 +437,33 @@ class NOCToolkit:
 ║                                                        ║
 ╚════════════════════════════════════════════════════════╝
 """
-        print(banner)
+        logger.info(banner)
 
-        # Display environment configuration status
-        env_icon = "✓" if _ENV_LOADED else "⚠️"
-        print(f"{env_icon} Config: {_ENV_MESSAGE}")
+        # Display config status
+        if self._config:
+            logger.info("✓ config.yaml: %d keys loaded", len(self._config))
+        else:
+            logger.info("⚠️  config.yaml: not found (copy config.yaml.example and configure)")
 
         # Display background monitor status
         monitor_status = self._monitor_bg.status_line()
         if self._monitor_bg.is_running:
-            print(f"▶ PD Monitor: {monitor_status}")
+            logger.info("▶ PD Monitor: %s", monitor_status)
         elif monitor_status != 'OFF':
-            print(f"  PD Monitor: {monitor_status}")
+            logger.info("  PD Monitor: %s", monitor_status)
 
-        print()
+        logger.info("")
 
     def display_menu(self) -> None:
         """Display the main menu."""
-        print("\n" + "=" * 56)
-        print("Available Tools:")
-        print("=" * 56)
+        logger.info("\n" + "=" * 56)
+        logger.info("Available Tools:")
+        logger.info("=" * 56)
 
         enabled_tools = self.get_enabled_tools()
 
         if not enabled_tools:
-            print("  No tools available.")
+            logger.info("  No tools available.")
             return
 
         for idx, tool in enumerate(enabled_tools, start=1):
@@ -411,15 +473,15 @@ class NOCToolkit:
             if tool.tool_id == "pd-monitor" and self._monitor_bg.is_running:
                 new = self._monitor_bg.new_lines
                 running_tag = f" [RUNNING{f', {new} new' if new else ''}]"
-            print(f"  {idx}. [{status_icon}] {tool.name}{running_tag}")
-            print(f"      {tool.description}")
+            logger.info("  %d. [%s] %s%s", idx, status_icon, tool.name, running_tag)
+            logger.info("      %s", tool.description)
             if not tool.exists():
-                print(f"      ⚠️  Warning: Script not found at {tool.get_full_path()}")
-            print()
+                logger.warning("      ⚠️  Warning: Script not found at %s", tool.get_full_path())
+            logger.info("")
 
-        print("-" * 56)
-        print("  0. Exit")
-        print("=" * 56)
+        logger.info("-" * 56)
+        logger.info("  0. Exit")
+        logger.info("=" * 56)
 
     def get_user_choice(self, max_choice: int) -> Optional[int]:
         """
@@ -438,13 +500,13 @@ class NOCToolkit:
             if 0 <= choice_num <= max_choice:
                 return choice_num
             else:
-                print(f"❌ Invalid choice. Please enter a number between 0 and {max_choice}.")
+                logger.info("❌ Invalid choice. Please enter a number between 0 and %d.", max_choice)
                 return None
         except ValueError:
-            print("❌ Invalid input. Please enter a number.")
+            logger.info("❌ Invalid input. Please enter a number.")
             return None
         except KeyboardInterrupt:
-            print("\n\n👋 Interrupted by user.")
+            logger.info("\n\n👋 Interrupted by user.")
             return 0
 
     def run_tool(self, tool: ToolDefinition) -> int:
@@ -460,12 +522,12 @@ class NOCToolkit:
         tool_path = tool.get_full_path()
 
         if not tool.exists():
-            print(f"❌ Error: Tool script not found at {tool_path}")
+            logger.error("❌ Error: Tool script not found at %s", tool_path)
             return 1
 
-        print(f"\n{'=' * 56}")
-        print(f"🚀 Launching: {tool.name}")
-        print(f"{'=' * 56}\n")
+        logger.info("\n%s", "=" * 56)
+        logger.info("🚀 Launching: %s", tool.name)
+        logger.info("%s\n", "=" * 56)
 
         try:
             if _FROZEN:
@@ -474,6 +536,12 @@ class NOCToolkit:
                 _append_debug(f"Launching (in-process): {tool.name}\n  path: {tool_path}")
                 saved_argv = sys.argv
                 saved_cwd = os.getcwd()
+                # Temporarily inject config into os.environ for in-process tools
+                injected_keys: List[str] = []
+                for key, value in self._config.items():
+                    if key not in os.environ or not os.environ[key]:
+                        os.environ[key] = value
+                        injected_keys.append(key)
                 # Ensure tools/common (noc_utils) is importable
                 common_str = str(COMMON_DIR)
                 if common_str not in sys.path:
@@ -489,19 +557,21 @@ class NOCToolkit:
                     return exit_code
                 except ImportError as exc:
                     _append_debug(f"IMPORT ERROR in {tool.name}: {exc}")
-                    print(f"\n❌ Missing package: {exc}")
-                    print("This dependency was not bundled into the EXE.")
+                    logger.error("\n❌ Missing package: %s", exc)
+                    logger.error("This dependency was not bundled into the EXE.")
                     return 1
                 finally:
                     sys.argv = saved_argv
                     os.chdir(saved_cwd)
+                    for key in injected_keys:
+                        os.environ.pop(key, None)
                 _append_debug(f"Finished: {tool.name} → exit code 0")
                 return 0
             else:
                 # Running from source — use subprocess with Python interpreter
                 cmd = [sys.executable, str(tool_path)]
                 cwd = str(tool_path.parent)
-                env = os.environ.copy()
+                env = self._tool_env()
                 # Ensure tools/common (noc_utils) is importable
                 extra = str(COMMON_DIR)
                 env["PYTHONPATH"] = extra + os.pathsep + env.get("PYTHONPATH", "")
@@ -510,11 +580,11 @@ class NOCToolkit:
                 _append_debug(f"Finished: {tool.name} → exit code {result.returncode}")
                 return result.returncode
         except KeyboardInterrupt:
-            print("\n\n⚠️  Tool execution interrupted by user.")
+            logger.info("\n\n⚠️  Tool execution interrupted by user.")
             return 130
         except Exception as error:
             _append_debug(f"EXCEPTION running {tool.name}: {error}")
-            print(f"\n❌ Error running tool: {error}")
+            logger.error("\n❌ Error running tool: %s", error)
             return 1
 
     def _run_pd_monitor_menu(self, tool: ToolDefinition) -> int:
@@ -522,18 +592,18 @@ class NOCToolkit:
 
         Returns exit code (0 = ok, used only for foreground run).
         """
-        print(f"\n{'=' * 56}")
-        print("PagerDuty Monitor Options")
-        print(f"{'=' * 56}")
+        logger.info("\n%s", "=" * 56)
+        logger.info("PagerDuty Monitor Options")
+        logger.info("=" * 56)
 
         if self._monitor_bg.is_running:
             status = self._monitor_bg.status_line()
-            print(f"  Monitor is running in background ({status})\n")
-            print("  1. View background output")
-            print("  2. Stop background monitor")
-            print("  3. Run in FOREGROUND (stops background first)")
-            print("  0. Back to main menu")
-            print(f"{'=' * 56}")
+            logger.info("  Monitor is running in background (%s)\n", status)
+            logger.info("  1. View background output")
+            logger.info("  2. Stop background monitor")
+            logger.info("  3. Run in FOREGROUND (stops background first)")
+            logger.info("  0. Back to main menu")
+            logger.info("=" * 56)
 
             try:
                 choice = input("\nSelect option [0-3]: ").strip()
@@ -544,19 +614,19 @@ class NOCToolkit:
                 return self._view_monitor_output()
             elif choice == '2':
                 self._monitor_bg.stop()
-                print("\n  Background monitor stopped.")
+                logger.info("\n  Background monitor stopped.")
                 return 0
             elif choice == '3':
                 self._monitor_bg.stop()
-                print("  Background monitor stopped.")
+                logger.info("  Background monitor stopped.")
                 return self.run_tool(tool)
             else:
                 return 0
         else:
-            print("  1. Run in BACKGROUND (continue using other tools)")
-            print("  2. Run in FOREGROUND (interactive, blocks menu)")
-            print("  0. Back to main menu")
-            print(f"{'=' * 56}")
+            logger.info("  1. Run in BACKGROUND (continue using other tools)")
+            logger.info("  2. Run in FOREGROUND (interactive, blocks menu)")
+            logger.info("  0. Back to main menu")
+            logger.info("%s", '=' * 56)
 
             try:
                 choice = input("\nSelect option [0-2]: ").strip()
@@ -572,12 +642,12 @@ class NOCToolkit:
 
     def _start_background_monitor(self, tool: ToolDefinition) -> int:
         """Ask for duration and launch pd-monitor in background."""
-        print("\nSelect monitoring duration:")
-        print("  1. 1 hour    [default]")
-        print("  2. 2 hours")
-        print("  3. 4 hours")
-        print("  4. 8 hours")
-        print("  0. Cancel")
+        logger.info("\nSelect monitoring duration:")
+        logger.info("  1. 1 hour    [default]")
+        logger.info("  2. 2 hours")
+        logger.info("  3. 4 hours")
+        logger.info("  4. 8 hours")
+        logger.info("  0. Cancel")
 
         duration_map = {'': 60, '1': 60, '2': 120, '3': 240, '4': 480}
 
@@ -591,20 +661,20 @@ class NOCToolkit:
 
         duration = duration_map.get(choice)
         if duration is None:
-            print("  Invalid choice, using 1 hour.")
+            logger.info("  Invalid choice, using 1 hour.")
             duration = 60
 
         tool_path = tool.get_full_path()
-        success = self._monitor_bg.start(tool_path, duration)
+        success = self._monitor_bg.start(tool_path, duration, base_env=self._tool_env())
 
         if success:
-            print(f"\n  PD Monitor started in background ({duration} min).")
-            print("  Status shown in banner. Select PD Monitor to view output or stop.")
+            logger.info("\n  PD Monitor started in background (%s min).", duration)
+            logger.info("  Status shown in banner. Select PD Monitor to view output or stop.")
         else:
             if self._monitor_bg.is_running:
-                print("\n  Monitor is already running in background.")
+                logger.info("\n  Monitor is already running in background.")
             else:
-                print("\n  Failed to start background monitor.")
+                logger.info("\n  Failed to start background monitor.")
             return 1
 
         return 0
@@ -614,20 +684,21 @@ class NOCToolkit:
 
         Returns exit code from the selected mode.
         """
-        gsheet_configured = bool(
-            os.environ.get("GSHEET_WEBAPP_URL", "").strip()
-            and os.environ.get("GSHEET_API_KEY", "").strip()
-        )
+        # Check both config.yaml and os.environ for Google Sheets credentials
+        def _get(key: str) -> str:
+            return (self._config.get(key) or os.environ.get(key, "")).strip()
 
-        print(f"\n{'=' * 56}")
-        print("Shift Report")
-        print(f"{'=' * 56}")
+        gsheet_configured = bool(_get("GSHEET_WEBAPP_URL") and _get("GSHEET_API_KEY"))
+
+        logger.info("\n%s", '=' * 56)
+        logger.info("Shift Report")
+        logger.info("%s", '=' * 56)
 
         if gsheet_configured:
-            print("  1. Online mode  (Google Sheets)  [recommended]")
-            print("  2. Local mode   (Excel file)")
-            print("  0. Back to main menu")
-            print(f"{'=' * 56}")
+            logger.info("  1. Online mode  (Google Sheets)  [recommended]")
+            logger.info("  2. Local mode   (Excel file)")
+            logger.info("  0. Back to main menu")
+            logger.info("%s", '=' * 56)
 
             try:
                 choice = input("\nSelect option [0-2]: ").strip()
@@ -647,18 +718,18 @@ class NOCToolkit:
             else:
                 return 0
         else:
-            print()
-            print("  Google Sheets mode is not configured.")
-            print()
-            print("  To enable it, add these variables to your .env file:")
-            print("    GSHEET_WEBAPP_URL=<web app URL>")
-            print("    GSHEET_API_KEY=<api key>")
-            print()
-            print("  Request these values from the toolkit maintainer.")
-            print()
-            print("  1. Local mode   (Excel file)")
-            print("  0. Back to main menu")
-            print(f"{'=' * 56}")
+            logger.info("")
+            logger.info("  Google Sheets mode is not configured.")
+            logger.info("")
+            logger.info("  To enable it, add these variables to your .env file:")
+            logger.info("    GSHEET_WEBAPP_URL=<web app URL>")
+            logger.info("    GSHEET_API_KEY=<api key>")
+            logger.info("")
+            logger.info("  Request these values from the toolkit maintainer.")
+            logger.info("")
+            logger.info("  1. Local mode   (Excel file)")
+            logger.info("  0. Back to main menu")
+            logger.info("%s", '=' * 56)
 
             try:
                 choice = input("\nSelect option [0-1]: ").strip()
@@ -672,21 +743,21 @@ class NOCToolkit:
 
     def _view_monitor_output(self) -> int:
         """Display buffered pd-monitor output."""
-        print(f"\n{'=' * 56}")
-        print(f"PD Monitor Output — {self._monitor_bg.status_line()}")
-        print(f"{'=' * 56}\n")
+        logger.info("\n%s", '=' * 56)
+        logger.info("PD Monitor Output — %s", self._monitor_bg.status_line())
+        logger.info("%s\n", '=' * 56)
 
         lines = self._monitor_bg.get_output()
 
         if not lines:
-            print("  (no output yet)")
+            logger.info("  (no output yet)")
         else:
             for line in lines:
-                print(f"  {line}")
+                logger.info("  %s", line)
 
-        print(f"\n{'=' * 56}")
+        logger.info("\n%s", '=' * 56)
         if self._monitor_bg.is_running:
-            print("  Monitor continues running in background.")
+            logger.info("  Monitor continues running in background.")
 
         try:
             input("\nPress Enter to return to main menu...")
@@ -705,7 +776,7 @@ class NOCToolkit:
             max_choice = len(enabled_tools)
 
             if max_choice == 0:
-                print("\n⚠️  No tools available. Exiting.")
+                logger.info("\n⚠️  No tools available. Exiting.")
                 break
 
             choice = self.get_user_choice(max_choice)
@@ -715,9 +786,9 @@ class NOCToolkit:
 
             if choice == 0:
                 if self._monitor_bg.is_running:
-                    print("\n  Stopping background PD Monitor...")
+                    logger.info("\n  Stopping background PD Monitor...")
                     self._monitor_bg.stop()
-                print("\n👋 Exiting NOC Toolkit. Goodbye!")
+                logger.info("\n👋 Exiting NOC Toolkit. Goodbye!")
                 break
 
             # Get the selected tool (adjust index since menu starts at 1)
@@ -737,12 +808,12 @@ class NOCToolkit:
             exit_code = self.run_tool(selected_tool)
 
             # Show completion message
-            print(f"\n{'=' * 56}")
+            logger.info("\n%s", '=' * 56)
             if exit_code == 0:
-                print(f"✅ {selected_tool.name} completed successfully.")
+                logger.info("✅ %s completed successfully.", selected_tool.name)
             else:
-                print(f"⚠️  {selected_tool.name} exited with code {exit_code}.")
-            print(f"{'=' * 56}")
+                logger.info("⚠️  %s exited with code %s.", selected_tool.name, exit_code)
+            logger.info("%s", '=' * 56)
 
             # Wait for user before returning to menu
             input("\nPress Enter to return to main menu...")
@@ -764,10 +835,10 @@ def main() -> int:
     except KeyboardInterrupt:
         if toolkit is not None and toolkit._monitor_bg.is_running:
             toolkit._monitor_bg.stop()
-        print("\n\n👋 Interrupted by user. Exiting.")
+        logger.info("\n\n👋 Interrupted by user. Exiting.")
         return 130
     except Exception as error:
-        print(f"\n❌ Unexpected error: {error}")
+        logger.error("\n❌ Unexpected error: %s", error)
         return 1
 
 

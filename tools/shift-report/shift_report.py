@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """NOC Report Assistant — syncs Jira statuses into End-of-Shift Excel report."""
 
+import logging
 import os
 import sys
 import re
@@ -18,18 +19,22 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 try:
-    from noc_utils import load_env
+    from noc_utils import setup_logging
 except ImportError:
-    def load_env() -> None:
-        pass
+    logging.basicConfig()
+    logging.error("noc_utils not found — run from project root or add tools/common to PYTHONPATH")
+    sys.exit(1)
 
 try:
     from openpyxl import load_workbook
     from openpyxl.styles import Font as _OpenpyxlFont
     from openpyxl.styles.colors import Color as _OpenpyxlColor
 except ImportError:
-    print("[ERROR] openpyxl required: pip install openpyxl")
+    logging.basicConfig()
+    logging.error("openpyxl required: pip install openpyxl")
     sys.exit(1)
+
+logger = setup_logging(name=__name__)
 
 # Jira-style link color (#0052CC)
 _HYPERLINK_COLOR = _OpenpyxlColor(rgb="FF0052CC")
@@ -593,8 +598,7 @@ class ShiftReport:
             with urlopen(request, context=ssl_context) as response:
                 return json.loads(response.read())
         except (URLError, HTTPError, KeyError) as error:
-            if self.verbose:
-                print(f"  [WARN] Jira request failed ({url}): {error}", file=sys.stderr)
+            logger.debug(f"Jira request failed ({url}): {error}")
             return None
 
     # -- internal: helpers ---------------------------------------------------
@@ -797,25 +801,25 @@ def collect_links() -> Tuple[str, str]:
 
         if SLACK_REGEX.search(link) and not slack_link:
             slack_link = link
-            print("  \u2713 Slack link detected")
+            logger.info("  \u2713 Slack link detected")
         elif JIRA_LINK_REGEX.search(link) and not jira_link:
             ticket_match = TICKET_REGEX.search(link)
             if ticket_match:
                 jira_link = link
-                print(f"  \u2713 Jira link detected: {ticket_match.group(1)}")
+                logger.info("  \u2713 Jira link detected: %s", ticket_match.group(1))
             else:
-                print("  \u2717 Could not extract ticket ID from Jira link")
+                logger.info("  \u2717 Could not extract ticket ID from Jira link")
         else:
-            print("  \u2717 Unrecognized link, try again")
+            logger.info("  \u2717 Unrecognized link, try again")
 
     return jira_link, slack_link
 
 
 def select_sheet() -> str:
     """Interactive sheet selection menu. No default — user must pick a number."""
-    print("Select sheet:")
+    logger.info("Select sheet:")
     for index, sheet_name in enumerate(SHEETS, 1):
-        print(f"  {index}. {sheet_name}")
+        logger.info("  %d. %s", index, sheet_name)
     while True:
         try:
             choice = int(input("Enter number: "))
@@ -823,15 +827,15 @@ def select_sheet() -> str:
                 return SHEETS[choice - 1]
         except (ValueError, EOFError):
             pass
-        print(f"  Invalid choice. Enter 1-{len(SHEETS)}.")
+        logger.info("  Invalid choice. Enter 1-%d.", len(SHEETS))
 
 
 def select_action() -> int:
     """Interactive action selection menu. No default — user must pick a number."""
-    print("Select action:")
-    print("  1. Start shift       \u2014 copy tickets from previous shift, update date, sync")
-    print("  2. End shift (SYNC)  \u2014 sync Jira statuses for all existing tickets")
-    print("  3. Add row           \u2014 add new ticket row to the report")
+    logger.info("Select action:")
+    logger.info("  1. Start shift       \u2014 copy tickets from previous shift, update date, sync")
+    logger.info("  2. End shift (SYNC)  \u2014 sync Jira statuses for all existing tickets")
+    logger.info("  3. Add row           \u2014 add new ticket row to the report")
     while True:
         try:
             choice = int(input("Enter number: "))
@@ -839,7 +843,7 @@ def select_action() -> int:
                 return choice
         except (ValueError, EOFError):
             pass
-        print("  Invalid choice. Enter 1-3.")
+        logger.info("  Invalid choice. Enter 1-3.")
 
 
 # ---------------------------------------------------------------------------
@@ -870,7 +874,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     """Entry point."""
-    load_env()
     args = parse_args()
 
     # Required env vars
@@ -882,7 +885,7 @@ def main() -> None:
     if not jira_token:
         missing_vars.append("JIRA_PERSONAL_ACCESS_TOKEN")
     if missing_vars:
-        print(f"[ERROR] Missing env vars: {', '.join(missing_vars)}")
+        logger.error("Missing env vars: %s", ', '.join(missing_vars))
         sys.exit(1)
 
     # Resolve file path
@@ -891,32 +894,32 @@ def main() -> None:
     )
     file_path = file_path.expanduser()
     if not file_path.exists():
-        print(f"[ERROR] File not found: {file_path}")
+        logger.error("File not found: %s", file_path)
         sys.exit(1)
 
     # Banner
-    print(f"  NOC Report Assistant v{VERSION}")
-    print(f"  File: {file_path.name}")
-    print()
+    logger.info("  NOC Report Assistant v%s", VERSION)
+    logger.info("  File: %s", file_path.name)
+    logger.info("")
 
     # Sheet selection
     sheet_name = select_sheet()
-    print(f"  Sheet: {sheet_name}")
-    print()
+    logger.info("  Sheet: %s", sheet_name)
+    logger.info("")
 
     # Action selection
     action = select_action()
-    print()
+    logger.info("")
 
     assistant = ShiftReport(jira_url, jira_token, args.dry_run, args.verbose)
 
     if action == 1:
         # Start shift
         source_sheet = assistant._opposite_sheet(sheet_name)
-        print(f"Starting shift handoff for {sheet_name}...")
-        print(f"  Source: {source_sheet}")
-        print(f"  Target: {sheet_name}")
-        print()
+        logger.info("Starting shift handoff for %s...", sheet_name)
+        logger.info("  Source: %s", source_sheet)
+        logger.info("  Target: %s", sheet_name)
+        logger.info("")
 
         result = assistant.start_shift(file_path, sheet_name)
         tickets_copied = result["tickets_copied"]
@@ -925,49 +928,49 @@ def main() -> None:
         sync_updates = result["sync_updates"]
         changed_count = sum(1 for u in sync_updates if u.changed)
 
-        print(f"  Date   : {new_month} {new_day}")
-        print(f"  Copied : {tickets_copied} ticket(s) from {source_sheet}")
+        logger.info("  Date   : %s %s", new_month, new_day)
+        logger.info("  Copied : %d ticket(s) from %s", tickets_copied, source_sheet)
         if sync_updates:
-            print(f"  Synced : {len(sync_updates)} tickets, {changed_count} changed")
+            logger.info("  Synced : %d tickets, %d changed", len(sync_updates), changed_count)
         if args.dry_run:
-            print("\n[DRY RUN] No changes saved.")
+            logger.info("\n[DRY RUN] No changes saved.")
         else:
-            print(f"\n  File saved: {file_path.name}")
+            logger.info("\n  File saved: %s", file_path.name)
 
     elif action == 2:
         # End shift (SYNC)
         updates = assistant.run(file_path, sheet_name)
         changed_count = sum(1 for update in updates if update.changed)
-        print(f"\nProcessed: {len(updates)} tickets, Changed: {changed_count}")
+        logger.info("\nProcessed: %d tickets, Changed: %d", len(updates), changed_count)
         if args.dry_run:
-            print("[DRY RUN] No changes saved.")
+            logger.info("[DRY RUN] No changes saved.")
         for update in updates:
             if update.changed:
-                print(f"  Row {update.row}: {update.ticket_id}")
-                print(f"    - {update.old_value}")
-                print(f"    + {update.new_value}")
+                logger.info("  Row %d: %s", update.row, update.ticket_id)
+                logger.info("    - %s", update.old_value)
+                logger.info("    + %s", update.new_value)
 
     elif action == 3:
         # Add row
         jira_link, slack_link = collect_links()
         ticket_id_match = TICKET_REGEX.search(jira_link)
         if not ticket_id_match:
-            print("[ERROR] Could not extract ticket ID from Jira link")
+            logger.error("Could not extract ticket ID from Jira link")
             sys.exit(1)
         ticket_id = ticket_id_match.group(1)
-        print(f"\nAdding {ticket_id} to {sheet_name}...")
+        logger.info("\nAdding %s to %s...", ticket_id, sheet_name)
 
         if args.dry_run:
             summary, jira_status, jira_assignee = assistant._fetch_jira_full(ticket_id)
-            print("  [DRY RUN] Would insert row:")
-            print(f"    C: {summary}")
-            print(f"    D: {ticket_id} (hyperlink)")
-            print(f"    E: {assistant._build_status_string(jira_status, jira_assignee, '')}")
-            print(f"    F: slack_link (hyperlink)")
+            logger.info("  [DRY RUN] Would insert row:")
+            logger.info("    C: %s", summary)
+            logger.info("    D: %s (hyperlink)", ticket_id)
+            logger.info("    E: %s", assistant._build_status_string(jira_status, jira_assignee, ''))
+            logger.info("    F: slack_link (hyperlink)")
         else:
             inserted_row = assistant.add_row(file_path, sheet_name, jira_link, slack_link)
-            print(f"  \u2713 Row inserted at row {inserted_row}")
-            print(f"  File saved: {file_path.name}")
+            logger.info("  \u2713 Row inserted at row %d", inserted_row)
+            logger.info("  File saved: %s", file_path.name)
 
 
 if __name__ == "__main__":

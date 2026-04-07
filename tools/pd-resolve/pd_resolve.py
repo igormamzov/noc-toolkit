@@ -13,6 +13,7 @@ DAG runs succeeded:
 7. Resolve PD incident + add note
 """
 
+import logging
 import os
 import re
 import sys
@@ -27,11 +28,14 @@ try:
     import requests
     import boto3
     from jira.exceptions import JIRAError
-    from noc_utils import load_env, require_env, new_pd_client, new_jira_client
+    from noc_utils import require_env, new_pd_client, new_jira_client, setup_logging
 except ImportError as import_error:
-    print(f"Error: Missing required dependencies. Please run: pip install -r requirements.txt")
-    print(f"Details: {import_error}")
+    logging.basicConfig()
+    logging.error("Missing required dependencies. Please run: pip install -r requirements.txt")
+    logging.error("Details: %s", import_error)
     sys.exit(1)
+
+logger = setup_logging(name=__name__)
 
 # Regex for detecting DRGN tickets in text
 DRGN_PATTERN = re.compile(r'\b(DRGN-\d+)\b')
@@ -231,7 +235,7 @@ class PDResolve:
                 if match:
                     return match.group(1)
         except pagerduty.Error as error:
-            print(f"  Warning: Could not fetch notes for {incident_id}: {error}")
+            logger.warning("  Could not fetch notes for %s: %s", incident_id, error)
         return None
 
     def resolve_pd_incident(self, incident_id: str, note_text: str) -> None:
@@ -243,8 +247,8 @@ class PDResolve:
             note_text: Note content to add before resolving
         """
         if self.dry_run:
-            print(f"  [DRY-RUN] Would resolve PD incident {incident_id}")
-            print(f"  [DRY-RUN] Would add PD note: {note_text}")
+            logger.info("  [DRY-RUN] Would resolve PD incident %s", incident_id)
+            logger.info("  [DRY-RUN] Would add PD note: %s", note_text)
             return
 
         # Add note first
@@ -254,7 +258,7 @@ class PDResolve:
                 json={'note': {'content': note_text}},
                 headers={'From': self.jira_email},
             )
-            print(f"  PD note added")
+            logger.info("  PD note added")
         except pagerduty.Error as error:
             raise RuntimeError(
                 f"Failed to add PD note to {incident_id}: {error}"
@@ -273,7 +277,7 @@ class PDResolve:
                 },
                 headers={'From': self.jira_email},
             )
-            print(f"  PD incident resolved")
+            logger.info("  PD incident resolved")
         except pagerduty.Error as error:
             raise RuntimeError(
                 f"Failed to resolve PD incident {incident_id}: {error}"
@@ -482,13 +486,13 @@ class PDResolve:
         runbook_status_id = RUNBOOK_UP_TO_DATE if runbook_url else RUNBOOK_MISSING
 
         if self.dry_run:
-            print(f"  [DRY-RUN] Would close {drgn_key} (transition {CLOSE_TRANSITION_ID})")
-            print(f"  [DRY-RUN]   CDS Alert Category: ETL ({ALERT_CATEGORY_ETL})")
-            print(f"  [DRY-RUN]   SLA Violation: {sla_violation_id}")
-            print(f"  [DRY-RUN]   Runbook Status: {runbook_status_id}")
-            print(f"  [DRY-RUN]   Runbook link: {runbook_url or '(none)'}")
-            print(f"  [DRY-RUN]   Resolution: Resolved Automatically ({RESOLUTION_AUTOMATICALLY})")
-            print(f"  [DRY-RUN]   Comment: {comment}")
+            logger.info("  [DRY-RUN] Would close %s (transition %s)", drgn_key, CLOSE_TRANSITION_ID)
+            logger.info("  [DRY-RUN]   CDS Alert Category: ETL (%s)", ALERT_CATEGORY_ETL)
+            logger.info("  [DRY-RUN]   SLA Violation: %s", sla_violation_id)
+            logger.info("  [DRY-RUN]   Runbook Status: %s", runbook_status_id)
+            logger.info("  [DRY-RUN]   Runbook link: %s", runbook_url or "(none)")
+            logger.info("  [DRY-RUN]   Resolution: Resolved Automatically (%s)", RESOLUTION_AUTOMATICALLY)
+            logger.info("  [DRY-RUN]   Comment: %s", comment)
             return
 
         try:
@@ -502,7 +506,7 @@ class PDResolve:
                 resolution={'id': RESOLUTION_AUTOMATICALLY},
                 comment=comment,
             )
-            print(f"  {drgn_key} -> Closed")
+            logger.info("  %s -> Closed", drgn_key)
         except JIRAError as error:
             raise RuntimeError(
                 f"Failed to close {drgn_key}: {error}"
@@ -548,8 +552,7 @@ class PDResolve:
                     page_id = results[0]['id']
                     return f"{confluence_base}/pages/viewpage.action?pageId={page_id}"
         except Exception as error:
-            if self.verbose:
-                print(f"  Warning: Confluence search failed: {error}")
+            logger.debug(f"Confluence search failed: {error}")
         return None
 
     # ------------------------------------------------------------------
@@ -564,10 +567,10 @@ class PDResolve:
         Returns:
             SLA Violation field value ID
         """
-        print("\nSLA Violation?")
-        print("  1. Yes")
-        print("  2. No")
-        print("  3. Unknown")
+        logger.info("\nSLA Violation?")
+        logger.info("  1. Yes")
+        logger.info("  2. No")
+        logger.info("  3. Unknown")
 
         while True:
             choice = input("Select [1-3]: ").strip()
@@ -578,7 +581,7 @@ class PDResolve:
             elif choice == '3':
                 return SLA_VIOLATION_UNKNOWN
             else:
-                print("  Invalid choice. Enter 1, 2, or 3.")
+                logger.info("  Invalid choice. Enter 1, 2, or 3.")
 
     @staticmethod
     def prompt_comment() -> str:
@@ -588,10 +591,10 @@ class PDResolve:
         Returns:
             Comment text string
         """
-        print("\nComment:")
+        logger.info("\nComment:")
         for index, preset in enumerate(COMMENT_PRESETS, start=1):
-            print(f"  {index}. {preset}")
-        print(f"  {len(COMMENT_PRESETS) + 1}. Custom (enter your own)")
+            logger.info("  %d. %s", index, preset)
+        logger.info("  %d. Custom (enter your own)", len(COMMENT_PRESETS) + 1)
 
         max_choice = len(COMMENT_PRESETS) + 1
         while True:
@@ -604,9 +607,9 @@ class PDResolve:
                     custom_comment = input("Enter comment: ").strip()
                     if custom_comment:
                         return custom_comment
-                    print("  Comment cannot be empty.")
+                    logger.info("  Comment cannot be empty.")
                     continue
-            print(f"  Invalid choice. Enter 1-{max_choice}.")
+            logger.info("  Invalid choice. Enter 1-%d.", max_choice)
 
     @staticmethod
     def prompt_drgn_key() -> Optional[str]:
@@ -616,7 +619,7 @@ class PDResolve:
         Returns:
             DRGN key string, or None if user skips
         """
-        print("\n  No DRGN ticket found in PD notes or external references.")
+        logger.info("\n  No DRGN ticket found in PD notes or external references.")
         drgn_input = input("  Enter DRGN key (or press Enter to skip): ").strip().upper()
         if drgn_input and drgn_input.startswith('DRGN-'):
             return drgn_input
@@ -640,21 +643,21 @@ class PDResolve:
             RuntimeError: On unrecoverable errors
         """
         mode_label = "[DRY-RUN] " if self.dry_run else ""
-        print(f"\n{mode_label}PD Resolver v{VERSION}")
-        print("-" * 50)
+        logger.info("\n%sPD Resolver v%s", mode_label, VERSION)
+        logger.info("-" * 50)
 
         # Step 1: Fetch incident
         incident_id = extract_incident_id(incident_input)
-        print(f"\nIncident: {incident_id}")
+        logger.info("\nIncident: %s", incident_id)
         incident_info = self.fetch_incident(incident_id)
-        print(f"  {incident_info['title']}")
-        print(f"  Status: {incident_info['status']}")
+        logger.info("  %s", incident_info['title'])
+        logger.info("  Status: %s", incident_info['status'])
 
         title = incident_info['title']
 
         # Step 2: Classify alert type
         alert_type = self.classify_alert(title)
-        print(f"\nAlert type: {alert_type}")
+        logger.info("\nAlert type: %s", alert_type)
 
         # Step 3: Extract DAG name
         dag_name = self.extract_dag_name(title)
@@ -662,20 +665,23 @@ class PDResolve:
             raise RuntimeError(
                 f"Could not extract DAG name from title: {title}"
             )
-        print(f"DAG: {dag_name}")
+        logger.info("DAG: %s", dag_name)
 
         # Step 4: Check Airflow runs
-        print("\nChecking Airflow runs...")
+        logger.info("\nChecking Airflow runs...")
         runs = self.check_airflow_runs(dag_name)
         success_count = sum(1 for run in runs if run.state == 'success')
         total_count = len(runs)
-        print(f"  {success_count}/{total_count} recent runs: SUCCESS")
+        logger.info("  %d/%d recent runs: SUCCESS", success_count, total_count)
 
         # Show failed runs if any
         failed_runs = [run for run in runs if run.state != 'success']
         if failed_runs:
             for failed_run in failed_runs[:3]:
-                print(f"  FAILED: {failed_run.dag_run_id} ({failed_run.state}) at {failed_run.start_date}")
+                logger.info(
+                    "  FAILED: %s (%s) at %s",
+                    failed_run.dag_run_id, failed_run.state, failed_run.start_date,
+                )
 
         min_consecutive = 2
         recovered = self.evaluate_recovery(runs, min_consecutive=min_consecutive)
@@ -687,9 +693,11 @@ class PDResolve:
                     consec += 1
                 else:
                     break
-            print(f"\n  NOT recovered -- last {consec} consecutive successes "
-                  f"(need {min_consecutive})")
-            print("  Cannot auto-resolve. Exiting.")
+            logger.info(
+                "\n  NOT recovered -- last %d consecutive successes (need %d)",
+                consec, min_consecutive,
+            )
+            logger.info("  Cannot auto-resolve. Exiting.")
             return ResolveResult(
                 incident_id=incident_id,
                 incident_title=title,
@@ -703,41 +711,41 @@ class PDResolve:
                 drgn_closed=False,
                 pd_resolved=False,
             )
-        print(f"  Recovery confirmed (last {min_consecutive}+ runs succeeded)")
+        logger.info("  Recovery confirmed (last %d+ runs succeeded)", min_consecutive)
 
         # Step 5: Find DRGN ticket
         drgn_key = incident_info.get('drgn_key')
         if drgn_key:
-            print(f"\nDRGN ticket: {drgn_key} (from Jira integration)")
+            logger.info("\nDRGN ticket: %s (from Jira integration)", drgn_key)
         else:
-            print("\nSearching PD notes for DRGN ticket...")
+            logger.info("\nSearching PD notes for DRGN ticket...")
             drgn_key = self.find_drgn_from_notes(incident_id)
             if drgn_key:
-                print(f"  Found in notes: {drgn_key}")
+                logger.info("  Found in notes: %s", drgn_key)
             else:
                 drgn_key = self.prompt_drgn_key()
                 if not drgn_key:
-                    print("  Skipping DRGN closure (no ticket found).")
+                    logger.info("  Skipping DRGN closure (no ticket found).")
 
         # Check DRGN status if found
         drgn_closed = False
         if drgn_key:
             drgn_status = self.get_drgn_status(drgn_key)
-            print(f"  {drgn_key} status: {drgn_status}")
+            logger.info("  %s status: %s", drgn_key, drgn_status)
             if drgn_status.lower() in ('closed', 'done', 'resolved'):
-                print(f"  {drgn_key} already closed. Skipping.")
+                logger.info("  %s already closed. Skipping.", drgn_key)
                 drgn_key = None
                 drgn_closed = True
 
         # Step 6: Find runbook
         runbook_url: Optional[str] = None
         if drgn_key:
-            print(f"\nSearching for runbook...")
+            logger.info("\nSearching for runbook...")
             runbook_url = self.find_runbook(dag_name)
             if runbook_url:
-                print(f"  Runbook: {runbook_url}")
+                logger.info("  Runbook: %s", runbook_url)
             else:
-                print("  Runbook not found (will set status = Missing)")
+                logger.info("  Runbook not found (will set status = Missing)")
 
         # Step 7: Interactive prompts (SLA + Comment)
         sla_violation_id: str = SLA_VIOLATION_UNKNOWN
@@ -759,20 +767,26 @@ class PDResolve:
                 SLA_VIOLATION_UNKNOWN: "Unknown",
             }.get(sla_violation_id, "Unknown")
 
-            print("\nActions:")
+            logger.info("\nActions:")
             action_number = 1
             if drgn_key:
-                print(f"  {action_number}. Close {drgn_key} (Resolution: Resolved Automatically, SLA: {sla_label})")
+                logger.info(
+                    "  %d. Close %s (Resolution: Resolved Automatically, SLA: %s)",
+                    action_number, drgn_key, sla_label,
+                )
                 action_number += 1
-            print(f"  {action_number}. Resolve PD #{incident_info['incident_number']} + add note")
+            logger.info(
+                "  %d. Resolve PD #%s + add note",
+                action_number, incident_info['incident_number'],
+            )
             action_number += 1
             if drgn_key:
-                print(f"  {action_number}. Comment: \"{comment_text}\"")
+                logger.info('  %d. Comment: "%s"', action_number, comment_text)
 
             if not self.no_confirm and not self.dry_run:
                 confirm = input("\nProceed? [Y/n] ").strip().lower()
                 if confirm not in ('', 'y', 'yes'):
-                    print("Aborted by user.")
+                    logger.info("Aborted by user.")
                     return ResolveResult(
                         incident_id=incident_id,
                         incident_title=title,
@@ -788,7 +802,7 @@ class PDResolve:
                     )
 
         # Step 9: Execute mutations
-        print()
+        logger.info("")
         errors: List[str] = []
         final_drgn_closed = drgn_closed
 
@@ -799,7 +813,7 @@ class PDResolve:
                 final_drgn_closed = True
             except RuntimeError as error:
                 errors.append(str(error))
-                print(f"  Error closing DRGN: {error}")
+                logger.error("  Error closing DRGN: %s", error)
 
         # Resolve PD incident
         pd_resolved = False
@@ -811,14 +825,14 @@ class PDResolve:
             pd_resolved = True
         except RuntimeError as error:
             errors.append(str(error))
-            print(f"  Error resolving PD incident: {error}")
+            logger.error("  Error resolving PD incident: %s", error)
 
         # Summary
-        print(f"\n{'[DRY-RUN] ' if self.dry_run else ''}Done.")
+        logger.info("\n%sDone.", "[DRY-RUN] " if self.dry_run else "")
         if errors:
-            print(f"  Errors: {len(errors)}")
+            logger.info("  Errors: %d", len(errors))
             for err in errors:
-                print(f"    - {err}")
+                logger.info("    - %s", err)
 
         return ResolveResult(
             incident_id=incident_id,
@@ -839,8 +853,6 @@ class PDResolve:
 def main() -> None:
     """Main entry point for the CLI tool."""
     import argparse
-
-    load_env()
 
     parser = argparse.ArgumentParser(
         description="PD Resolver -- Auto-resolve PD incidents where Airflow jobs recovered",
@@ -886,10 +898,10 @@ def main() -> None:
         try:
             args.incident = input("PagerDuty incident URL or ID: ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\nAborted.")
+            logger.info("\nAborted.")
             sys.exit(130)
         if not args.incident:
-            print("Error: incident is required.", file=sys.stderr)
+            logger.error("incident is required.")
             sys.exit(1)
 
     # Validate environment
@@ -921,10 +933,10 @@ def main() -> None:
             sys.exit(1)
 
     except RuntimeError as error:
-        print(f"\nError: {error}", file=sys.stderr)
+        logger.error(str(error))
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\nAborted by user.")
+        logger.info("\nAborted by user.")
         sys.exit(130)
 
 

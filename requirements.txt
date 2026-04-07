@@ -5,6 +5,7 @@
 # Core dependencies
 # -----------------
 python-dotenv>=1.0.0  # Environment variable management
+PyYAML>=6.0           # YAML config file parsing
 
 # PagerDuty integration
 # ---------------------

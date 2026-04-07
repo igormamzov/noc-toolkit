@@ -10,7 +10,9 @@ import re
 import sys
 from typing import Any, Set, List
 
-from noc_utils import load_env, new_pd_client
+from noc_utils import new_pd_client, setup_logging
+
+logger = setup_logging(name=__name__)
 
 # Version information
 VERSION = "0.1.1"
@@ -18,7 +20,7 @@ VERSION = "0.1.1"
 try:
     import pagerduty
 except ImportError:
-    print("Error: Missing required dependencies. Please run: pip install -r requirements.txt")
+    logger.error("Error: Missing required dependencies. Please run: pip install -r requirements.txt")
     sys.exit(1)
 
 
@@ -150,21 +152,19 @@ def extract_incident_id(incident_input: str) -> str:
 
 def main() -> None:
     """Main entry point for the CLI tool."""
-    load_env()
-
     pagerduty_api_token = os.environ.get('PAGERDUTY_API_TOKEN')
     if not pagerduty_api_token:
-        print("Error: Missing required environment variable: PAGERDUTY_API_TOKEN", file=sys.stderr)
-        print("\nPlease set this in your environment or create a .env file.", file=sys.stderr)
-        print("See .env.example for the required format.", file=sys.stderr)
+        logger.error("Error: Missing required environment variable: PAGERDUTY_API_TOKEN")
+        logger.error("\nPlease set this in your environment or create a .env file.")
+        logger.error("See .env.example for the required format.")
         sys.exit(1)
 
     # Parse command line arguments
     if len(sys.argv) < 2:
-        print("Usage: python extract_jobs.py <INCIDENT_URL_OR_ID>", file=sys.stderr)
-        print("\nExample:", file=sys.stderr)
-        print("  python extract_jobs.py Q1WPEMZKLQZGJF", file=sys.stderr)
-        print("  python extract_jobs.py https://yourcompany.pagerduty.com/incidents/Q1WPEMZKLQZGJF", file=sys.stderr)
+        logger.error("Usage: python extract_jobs.py <INCIDENT_URL_OR_ID>")
+        logger.error("\nExample:")
+        logger.error("  python extract_jobs.py Q1WPEMZKLQZGJF")
+        logger.error("  python extract_jobs.py https://yourcompany.pagerduty.com/incidents/Q1WPEMZKLQZGJF")
         sys.exit(1)
 
     incident_input = sys.argv[1]
@@ -175,18 +175,18 @@ def main() -> None:
         extractor = PDJobs(pagerduty_api_token=pagerduty_api_token)
         jobs = extractor.get_jobs_from_incident(incident_id)
     except pagerduty.Error as error:
-        print(f"Error: Failed to fetch incident data: {error}", file=sys.stderr)
+        logger.error("Error: Failed to fetch incident data: %s", error)
         sys.exit(1)
     except Exception as error:
-        print(f"Error: {error}", file=sys.stderr)
+        logger.error("Error: %s", error)
         sys.exit(1)
 
-    # Print results (just the list)
+    # Output results (just the list)
     if jobs:
         for job in jobs:
-            print(job)
+            logger.info(job)
     else:
-        print("No jobs matching jb_* pattern were found", file=sys.stderr)
+        logger.error("No jobs matching jb_* pattern were found")
         sys.exit(1)
 
 

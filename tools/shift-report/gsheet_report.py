@@ -5,6 +5,7 @@ Talks to the Apps Script Web App to read/write the shift report
 directly in Google Sheets, without downloading an Excel file.
 """
 
+import logging
 import os
 import sys
 import re
@@ -17,10 +18,13 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 try:
-    from dotenv import load_dotenv
+    from noc_utils import setup_logging
 except ImportError:
-    def load_dotenv() -> None:
-        pass
+    logging.basicConfig()
+    logging.error("noc_utils not found — add tools/common to PYTHONPATH")
+    sys.exit(1)
+
+logger = setup_logging(name=__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -159,8 +163,7 @@ class JiraClient:
             with urlopen(request, context=ctx) as response:
                 return json.loads(response.read())
         except (URLError, HTTPError, KeyError) as error:
-            if self.verbose:
-                print(f"  [WARN] Jira request failed ({url}): {error}", file=sys.stderr)
+            logger.debug("Jira request failed (%s): %s", url, error)
             return None
 
 
@@ -186,14 +189,14 @@ def do_sync(
     dry_run: bool = False,
 ) -> List[Dict[str, str]]:
     """Read tickets from Google Sheet, fetch Jira statuses, push updates back."""
-    print(f"  Reading {sheet_name} from Google Sheets...")
+    logger.info("  Reading %s from Google Sheets...", sheet_name)
     sheet_data = gsheet.read_sheet(sheet_name)
 
     if not sheet_data.get("ok"):
         raise RuntimeError(f"Failed to read sheet: {sheet_data}")
 
     tickets = sheet_data["tickets"]
-    print(f"  Found {len(tickets)} tickets")
+    logger.info("  Found %d tickets", len(tickets))
 
     updates: List[Dict[str, Any]] = []
     changes: List[Dict[str, str]] = []
@@ -222,15 +225,15 @@ def do_sync(
             })
 
     if updates and not dry_run:
-        print(f"  Pushing {len(updates)} status updates to Google Sheets...")
+        logger.info("  Pushing %d status updates to Google Sheets...", len(updates))
         result = gsheet.sync_statuses(sheet_name, updates)
         if not result.get("ok"):
             raise RuntimeError(f"Sync failed: {result}")
-        print(f"  Updated: {result.get('updated', 0)} cells")
+        logger.info("  Updated: %d cells", result.get('updated', 0))
     elif dry_run and updates:
-        print(f"  [DRY RUN] Would update {len(updates)} cells")
+        logger.info("  [DRY RUN] Would update %d cells", len(updates))
     else:
-        print("  All statuses up to date")
+        logger.info("  All statuses up to date")
 
     return changes
 
@@ -253,11 +256,11 @@ def do_add_row(
     status_string = build_status_string(jira_status, jira_assignee, "")
 
     if dry_run:
-        print(f"  [DRY RUN] Would insert:")
-        print(f"    C: {summary}")
-        print(f"    D: {ticket_id} -> {jira_link}")
-        print(f"    E: {status_string}")
-        print(f"    F: slack_link -> {slack_link}")
+        logger.info("  [DRY RUN] Would insert:")
+        logger.info("    C: %s", summary)
+        logger.info("    D: %s -> %s", ticket_id, jira_link)
+        logger.info("    E: %s", status_string)
+        logger.info("    F: slack_link -> %s", slack_link)
         return None
 
     result = gsheet.add_row(sheet_name, {
@@ -273,7 +276,7 @@ def do_add_row(
         raise RuntimeError(f"Add row failed: {result}")
 
     inserted_row = result.get("insertedRow")
-    print(f"  Row inserted at row {inserted_row}")
+    logger.info("  Row inserted at row %s", inserted_row)
     return inserted_row
 
 
@@ -285,17 +288,17 @@ def do_start_shift(
 ) -> Dict[str, Any]:
     """Start-of-shift handoff via Google Sheets."""
     opposite = "Day-Shift-NEW" if sheet_name == "Night-Shift-NEW" else "Night-Shift-NEW"
-    print(f"  Source: {opposite}")
-    print(f"  Target: {sheet_name}")
+    logger.info("  Source: %s", opposite)
+    logger.info("  Target: %s", sheet_name)
 
     if dry_run:
         source_data = gsheet.read_sheet(opposite)
         ticket_count = len(source_data.get("tickets", []))
-        print(f"  [DRY RUN] Would copy {ticket_count} tickets from {opposite}")
-        print(f"  [DRY RUN] Would update date and reset TTM")
+        logger.info("  [DRY RUN] Would copy %d tickets from %s", ticket_count, opposite)
+        logger.info("  [DRY RUN] Would update date and reset TTM")
         return {"tickets_copied": ticket_count, "dry_run": True}
 
-    print("  Running shift handoff on Google Sheets...")
+    logger.info("  Running shift handoff on Google Sheets...")
     result = gsheet.start_shift(sheet_name)
 
     if not result.get("ok"):
@@ -304,12 +307,12 @@ def do_start_shift(
     tickets_copied = result.get("ticketsCopied", 0)
     date_day = result.get("dateDay")
     date_month = result.get("dateMonth")
-    print(f"  Date   : {date_month} {date_day}")
-    print(f"  Copied : {tickets_copied} ticket(s) from {opposite}")
+    logger.info("  Date   : %s %s", date_month, date_day)
+    logger.info("  Copied : %d ticket(s) from %s", tickets_copied, opposite)
 
     # Sync Jira statuses after handoff
-    print()
-    print("  Syncing Jira statuses...")
+    logger.info("")
+    logger.info("  Syncing Jira statuses...")
     changes = do_sync(gsheet, jira, sheet_name)
 
     return {
@@ -346,25 +349,25 @@ def collect_links() -> Tuple[str, str]:
 
         if SLACK_REGEX.search(link) and not slack_link:
             slack_link = link
-            print("  \u2713 Slack link detected")
+            logger.info("  \u2713 Slack link detected")
         elif JIRA_LINK_REGEX.search(link) and not jira_link:
             ticket_match = TICKET_REGEX.search(link)
             if ticket_match:
                 jira_link = link
-                print(f"  \u2713 Jira link detected: {ticket_match.group(1)}")
+                logger.info("  \u2713 Jira link detected: %s", ticket_match.group(1))
             else:
-                print("  \u2717 Could not extract ticket ID from Jira link")
+                logger.info("  \u2717 Could not extract ticket ID from Jira link")
         else:
-            print("  \u2717 Unrecognized link, try again")
+            logger.info("  \u2717 Unrecognized link, try again")
 
     return jira_link, slack_link
 
 
 def select_sheet() -> str:
     """Interactive sheet selection."""
-    print("Select sheet:")
+    logger.info("Select sheet:")
     for index, name in enumerate(SHEETS, 1):
-        print(f"  {index}. {name}")
+        logger.info("  %d. %s", index, name)
     while True:
         try:
             choice = int(input("Enter number: "))
@@ -372,15 +375,15 @@ def select_sheet() -> str:
                 return SHEETS[choice - 1]
         except (ValueError, EOFError):
             pass
-        print(f"  Invalid choice. Enter 1-{len(SHEETS)}.")
+        logger.info("  Invalid choice. Enter 1-%d.", len(SHEETS))
 
 
 def select_action() -> int:
     """Interactive action selection."""
-    print("Select action:")
-    print("  1. Start shift       \u2014 copy tickets from previous shift, update date, sync")
-    print("  2. End shift (SYNC)  \u2014 sync Jira statuses for all existing tickets")
-    print("  3. Add row           \u2014 add new ticket row to the report")
+    logger.info("Select action:")
+    logger.info("  1. Start shift       \u2014 copy tickets from previous shift, update date, sync")
+    logger.info("  2. End shift (SYNC)  \u2014 sync Jira statuses for all existing tickets")
+    logger.info("  3. Add row           \u2014 add new ticket row to the report")
     while True:
         try:
             choice = int(input("Enter number: "))
@@ -388,7 +391,7 @@ def select_action() -> int:
                 return choice
         except (ValueError, EOFError):
             pass
-        print("  Invalid choice. Enter 1-3.")
+        logger.info("  Invalid choice. Enter 1-3.")
 
 
 # ---------------------------------------------------------------------------
@@ -414,11 +417,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     """Entry point."""
-    load_dotenv()
-    parent_env = Path(__file__).resolve().parent.parent.parent / ".env"
-    if parent_env.exists():
-        load_dotenv(parent_env)
-
     args = parse_args()
 
     # Required env vars
@@ -437,51 +435,51 @@ def main() -> None:
     if not jira_token:
         missing.append("JIRA_PERSONAL_ACCESS_TOKEN")
     if missing:
-        print(f"[ERROR] Missing env vars: {', '.join(missing)}")
+        logger.error("[ERROR] Missing env vars: %s", ', '.join(missing))
         sys.exit(1)
 
     gsheet = GSheetClient(webapp_url, api_key)
     jira = JiraClient(jira_url, jira_token, args.verbose)
 
     # Banner
-    print(f"  NOC Report Assistant (Google Sheets) v{VERSION}")
-    print()
+    logger.info("  NOC Report Assistant (Google Sheets) v%s", VERSION)
+    logger.info("")
 
     sheet_name = select_sheet()
-    print(f"  Sheet: {sheet_name}")
-    print()
+    logger.info("  Sheet: %s", sheet_name)
+    logger.info("")
 
     action = select_action()
-    print()
+    logger.info("")
 
     if action == 1:
         result = do_start_shift(gsheet, jira, sheet_name, args.dry_run)
         if args.dry_run:
-            print("\n[DRY RUN] No changes saved.")
+            logger.info("\n[DRY RUN] No changes saved.")
         else:
-            print(f"\n  Done!")
+            logger.info("\n  Done!")
 
     elif action == 2:
         changes = do_sync(gsheet, jira, sheet_name, args.dry_run)
         changed_count = len(changes)
-        print(f"\n  Changed: {changed_count} tickets")
+        logger.info("\n  Changed: %d tickets", changed_count)
         if args.dry_run:
-            print("[DRY RUN] No changes saved.")
+            logger.info("[DRY RUN] No changes saved.")
         for change in changes:
-            print(f"  Row {change['row']}: {change['ticket_id']}")
-            print(f"    - {change['old']}")
-            print(f"    + {change['new']}")
+            logger.info("  Row %s: %s", change['row'], change['ticket_id'])
+            logger.info("    - %s", change['old'])
+            logger.info("    + %s", change['new'])
 
     elif action == 3:
         jira_link, slack_link = collect_links()
         ticket_id_match = TICKET_REGEX.search(jira_link)
         if not ticket_id_match:
-            print("[ERROR] Could not extract ticket ID from Jira link")
+            logger.error("[ERROR] Could not extract ticket ID from Jira link")
             sys.exit(1)
-        print(f"\nAdding {ticket_id_match.group(1)} to {sheet_name}...")
+        logger.info("\nAdding %s to %s...", ticket_id_match.group(1), sheet_name)
         do_add_row(gsheet, jira, sheet_name, jira_link, slack_link, args.dry_run)
         if not args.dry_run:
-            print(f"  Done!")
+            logger.info("  Done!")
 
 
 if __name__ == "__main__":

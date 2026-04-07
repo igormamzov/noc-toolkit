@@ -13,6 +13,7 @@ import argparse
 import csv
 import io
 import json
+import logging
 import os
 import sys
 import time
@@ -27,15 +28,19 @@ warnings.filterwarnings("ignore", message=".*urllib3.*")
 
 try:
     import requests
-except ImportError:
-    print("Error: Missing 'requests' library. Run: pip install -r requirements.txt", file=sys.stderr)
+except ImportError:  # pragma: no cover
+    logging.basicConfig()
+    logging.error("Error: Missing 'requests' library. Run: pip install -r requirements.txt")
     sys.exit(1)
 
 try:
-    from noc_utils import load_env
-except ImportError:
-    print("Error: Missing noc_utils. Ensure tools/common/ is on Python path.", file=sys.stderr)
+    from noc_utils import setup_logging
+except ImportError:  # pragma: no cover
+    logging.basicConfig()
+    logging.error("Error: Missing noc_utils. Ensure tools/common/ is on Python path.")
     sys.exit(1)
+
+logger = setup_logging(name=__name__)
 
 VERSION = "0.1.1"
 
@@ -151,8 +156,7 @@ class DatabricksSQL:
             "wait_timeout": "0s",  # async — we poll ourselves for better control
         }
 
-        if self.verbose:
-            print(f"\n  [SQL] Submitting query ({len(sql)} chars)...", file=sys.stderr)
+        logger.debug("SQL: Submitting query (%d chars)", len(sql))
 
         response = requests.post(self.base_url, headers=self.headers, json=payload, timeout=30)
         if response.status_code != 200:
@@ -164,8 +168,7 @@ class DatabricksSQL:
         statement_id: str = result.get("statement_id", "")
         status: str = result.get("status", {}).get("state", "UNKNOWN")
 
-        if self.verbose:
-            print(f"  [SQL] Statement ID: {statement_id}, initial state: {status}", file=sys.stderr)
+        logger.debug("SQL: Statement ID: %s, initial state: %s", statement_id, status)
 
         # Poll until terminal state
         deadline = time.monotonic() + timeout
@@ -188,8 +191,7 @@ class DatabricksSQL:
             result = poll_response.json()
             status = result.get("status", {}).get("state", "UNKNOWN")
 
-            if self.verbose:
-                print(f"  [SQL] Polling... state: {status}", file=sys.stderr)
+            logger.debug("SQL: Polling... state: %s", status)
 
         if status == "FAILED":
             error_message = result.get("status", {}).get("error", {}).get("message", "Unknown error")
@@ -622,7 +624,7 @@ class FreshnessChecker:
 
     def run_main_report(self) -> List[FreshnessRow]:
         """Execute the main 15-row freshness report query."""
-        print("Running main freshness report (15 tables)...")
+        logger.info("Running main freshness report (15 tables)...")
         raw_rows = self.db.execute(MAIN_FRESHNESS_QUERY)
 
         rows: List[FreshnessRow] = []
@@ -662,11 +664,9 @@ class FreshnessChecker:
                     result = self._check_bi_loader_table(table_name)
                     results.append(result)
                 else:
-                    if self.verbose:
-                        print(f"  [SKIP] No granular check available for {group_name}/{table_name}",
-                              file=sys.stderr)
+                    logger.debug("No granular check available for %s/%s", group_name, table_name)
             except DatabricksAPIError as error:
-                print(f"  [ERROR] Granular check failed for {table_name}: {error}", file=sys.stderr)
+                logger.error("Granular check failed for %s: %s", table_name, error)
                 results.append(GranularResult(
                     table_name=table_name,
                     check_type="error",
@@ -681,8 +681,7 @@ class FreshnessChecker:
         base_table = DACSCAN_TABLE_MAP[table_name]
         sql = build_dacscan_granular_query(table_name, base_table)
 
-        if self.verbose:
-            print(f"  Checking DACSCAN table: {table_name}...", file=sys.stderr)
+        logger.debug("Checking DACSCAN table: %s", table_name)
 
         rows = self.db.execute(sql)
 
@@ -730,8 +729,7 @@ class FreshnessChecker:
         base_table = NON_DACSCAN_TABLE_MAP[table_name]
         sql = build_non_dacscan_freshness_query(table_name, base_table)
 
-        if self.verbose:
-            print(f"  Checking aggregate table: {table_name}...", file=sys.stderr)
+        logger.debug("Checking aggregate table: %s", table_name)
 
         rows = self.db.execute(sql)
         if rows:
@@ -753,8 +751,7 @@ class FreshnessChecker:
         base_table, date_column = BI_LOADER_TABLE_MAP[table_name]
         sql = build_bi_loader_freshness_query(table_name, base_table, date_column)
 
-        if self.verbose:
-            print(f"  Checking BI-LOADER table: {table_name}...", file=sys.stderr)
+        logger.debug("Checking BI-LOADER table: %s", table_name)
 
         rows = self.db.execute(sql)
         if rows:
@@ -809,42 +806,42 @@ def _sla_status() -> str:
 
 
 def _print_dry_run_queries(check_all: bool) -> None:
-    """Print all SQL queries that would be executed without running them."""
-    print("=" * 60)
-    print("DRY RUN — Queries that would be executed:")
-    print("=" * 60)
-    print()
-    print("--- Query 1: Main Freshness Report ---")
-    print(MAIN_FRESHNESS_QUERY)
-    print()
+    """Log all SQL queries that would be executed without running them."""
+    logger.info("=" * 60)
+    logger.info("DRY RUN — Queries that would be executed:")
+    logger.info("=" * 60)
+    logger.info("")
+    logger.info("--- Query 1: Main Freshness Report ---")
+    logger.info(MAIN_FRESHNESS_QUERY)
+    logger.info("")
 
     if check_all:
-        print("--- Granular Checks (--check-all): ALL tables ---")
+        logger.info("--- Granular Checks (--check-all): ALL tables ---")
     else:
-        print("--- Granular Checks: only for Delayed tables ---")
+        logger.info("--- Granular Checks: only for Delayed tables ---")
 
-    print()
-    print("  DACSCAN tables:")
+    logger.info("")
+    logger.info("  DACSCAN tables:")
     for table_name, base_table in DACSCAN_TABLE_MAP.items():
         sql = build_dacscan_granular_query(table_name, base_table)
-        print(f"\n  -- {table_name} --")
-        print(f"  {sql[:120]}...")
-    print()
+        logger.info("\n  -- %s --", table_name)
+        logger.info("  %s...", sql[:120])
+    logger.info("")
 
-    print("  Non-DACSCAN aggregate tables:")
+    logger.info("  Non-DACSCAN aggregate tables:")
     for table_name, base_table in NON_DACSCAN_TABLE_MAP.items():
         sql = build_non_dacscan_freshness_query(table_name, base_table)
-        print(f"\n  -- {table_name} --")
-        print(f"  {sql}")
-    print()
+        logger.info("\n  -- %s --", table_name)
+        logger.info("  %s", sql)
+    logger.info("")
 
-    print("  BI-LOADER tables:")
+    logger.info("  BI-LOADER tables:")
     for table_name, (base_table, date_col) in BI_LOADER_TABLE_MAP.items():
         sql = build_bi_loader_freshness_query(table_name, base_table, date_col)
-        print(f"\n  -- {table_name} --")
-        print(f"  {sql}")
-    print()
-    print("=" * 60)
+        logger.info("\n  -- %s --", table_name)
+        logger.info("  %s", sql)
+    logger.info("")
+    logger.info("=" * 60)
 
 
 # ---------------------------------------------------------------------------
@@ -880,16 +877,15 @@ Examples:
 
 def main() -> None:
     """Main entry point."""
-    load_env()
     args = parse_args()
 
-    print()
-    print("=" * 60)
-    print(f"  Data Freshness Checker v{VERSION}")
-    print(f"  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC")
-    print(f"  SLA: {_sla_status()}")
-    print("=" * 60)
-    print()
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("  Data Freshness Checker v%s", VERSION)
+    logger.info("  %s UTC", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
+    logger.info("  SLA: %s", _sla_status())
+    logger.info("=" * 60)
+    logger.info("")
 
     # Dry run — just show queries
     if args.dry_run:
@@ -910,12 +906,13 @@ def main() -> None:
         missing_vars.append("DATABRICKS_WAREHOUSE_ID")
 
     if missing_vars:
-        print(f"Error: Missing required environment variables: {', '.join(missing_vars)}", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("Configure in .env file:", file=sys.stderr)
-        print("  DATABRICKS_HOST=ticketmaster-cds-analytics.cloud.databricks.com", file=sys.stderr)
-        print("  DATABRICKS_TOKEN=your_personal_access_token", file=sys.stderr)
-        print("  DATABRICKS_WAREHOUSE_ID=your_warehouse_id", file=sys.stderr)
+        logger.error("Missing required environment variables: %s", ", ".join(missing_vars))
+        logger.error(
+            "Configure in .env file:\n"
+            "  DATABRICKS_HOST=ticketmaster-cds-analytics.cloud.databricks.com\n"
+            "  DATABRICKS_TOKEN=your_personal_access_token\n"
+            "  DATABRICKS_WAREHOUSE_ID=your_warehouse_id"
+        )
         sys.exit(1)
 
     # Initialize client
@@ -931,11 +928,11 @@ def main() -> None:
     try:
         freshness_rows = checker.run_main_report()
     except DatabricksAPIError as error:
-        print(f"Error: Failed to run main report: {error}", file=sys.stderr)
+        logger.error("Failed to run main report: %s", error)
         sys.exit(1)
 
     if not freshness_rows:
-        print("Warning: Main report returned no rows.", file=sys.stderr)
+        logger.warning("Main report returned no rows")
         sys.exit(1)
 
     # Step 2: Identify delayed tables
@@ -946,40 +943,43 @@ def main() -> None:
     granular_results: Optional[List[GranularResult]] = None
     if tables_to_check:
         check_label = "all" if args.check_all else f"{len(delayed_rows)} delayed"
-        print(f"Running granular checks for {check_label} table(s)...")
+        logger.info("Running granular checks for %s table(s)...", check_label)
         granular_results = checker.run_granular_checks(tables_to_check)
 
     # Step 4: Output results
-    print()
+    logger.info("")
     if args.format == "csv":
-        print(format_csv(freshness_rows))
+        logger.info(format_csv(freshness_rows))
     elif args.format == "json":
-        print(format_json(freshness_rows))
+        logger.info(format_json(freshness_rows))
     else:
-        print(format_table(freshness_rows, granular_results))
+        logger.info(format_table(freshness_rows, granular_results))
 
     # Step 5: Summary
     met_count = sum(1 for row in freshness_rows if row.met.strip().lower() == "yes")
     total_count = len(freshness_rows)
     delayed_count = total_count - met_count
 
-    print()
+    logger.info("")
     if delayed_count == 0:
-        print(f"  ALL {total_count} tables MET SLA")
+        logger.info("  ALL %d tables MET SLA", total_count)
     else:
-        print(f"  {met_count}/{total_count} tables Met, {delayed_count} DELAYED")
+        logger.info("  %d/%d tables Met, %d DELAYED", met_count, total_count, delayed_count)
 
         # Show granular results summary if available
         if granular_results:
             actually_fresh = [r for r in granular_results if r.is_actually_fresh]
             if actually_fresh:
-                print(f"  {len(actually_fresh)} table(s) show 'Delayed' in metadata but data is actually fresh:")
+                logger.info(
+                    "  %d table(s) show 'Delayed' in metadata but data is actually fresh:",
+                    len(actually_fresh),
+                )
                 for result in actually_fresh:
-                    print(f"    - {result.table_name}: {result.detail}")
+                    logger.info("    - %s: %s", result.table_name, result.detail)
 
-    print()
-    print(f"  SLA: {_sla_status()}")
-    print()
+    logger.info("")
+    logger.info("  SLA: %s", _sla_status())
+    logger.info("")
 
     # Step 6: HTML report
     if args.report:
@@ -987,9 +987,9 @@ def main() -> None:
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         report_path = Path.cwd() / f"freshness-report-{today_str}.html"
         report_path.write_text(html_content, encoding="utf-8")
-        print(f"  Report saved: {report_path}")
+        logger.info("  Report saved: %s", report_path)
         webbrowser.open(f"file://{report_path}")
-        print(f"  Opened in browser.")
+        logger.info("  Opened in browser.")
 
 
 if __name__ == "__main__":

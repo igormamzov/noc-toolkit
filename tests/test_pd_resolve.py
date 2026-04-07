@@ -1,5 +1,6 @@
 """Tests for pd-resolver tool (PD Resolver v0.1.0)."""
 
+import sys
 from unittest.mock import MagicMock, patch, PropertyMock
 from typing import Any, Dict, List, Optional
 
@@ -300,6 +301,30 @@ class TestFetchIncident:
         }
         result = resolver.fetch_incident("ABC123")
         assert result["id"] == "ABC123"
+
+    def test_non_dict_response(self):
+        """API returns a non-dict response (MagicMock) — exercises the else branch."""
+        resolver = _make_resolver()
+
+        # MagicMock is not an instance of dict, so it hits the `else: incident = response`
+        # branch.  We configure it to behave like a dict for the subsequent subscript/get
+        # accesses the code makes.
+        fake_incident = MagicMock(spec_set=None)
+        fake_incident.__getitem__ = MagicMock(side_effect=lambda k: {
+            'id': 'XYZ999',
+        }[k])
+        fake_incident.get = MagicMock(side_effect=lambda k, d=None: {
+            'title': 'DAG test_dag has failed consecutively',
+            'status': 'triggered',
+            'incident_number': 1,
+            'html_url': 'https://pd.example.com/incidents/XYZ999',
+            'external_references': [],
+        }.get(k, d))
+
+        resolver.pd_client.rget.return_value = fake_incident
+        result = resolver.fetch_incident("XYZ999")
+        assert result["id"] == "XYZ999"
+        assert result["drgn_key"] is None
 
 
 class TestFindDrgnFromNotes:
@@ -974,3 +999,553 @@ class TestConstants:
 
     def test_mwaa_vpce(self):
         assert "airflow.amazonaws.com" in MWAA_VPCE
+
+
+# ===========================================================================
+# Tests: Import error fallback block (lines 33-36)
+# ===========================================================================
+
+
+class TestImportErrorFallback:
+    """Test the ImportError fallback at module top-level."""
+
+    def test_import_error_calls_sys_exit(self):
+        """Simulating ImportError during module load triggers sys.exit(1)."""
+        import importlib
+
+        # Save current state
+        saved = sys.modules.copy()
+        try:
+            # Remove pd_resolve and its cached deps so we can re-import
+            for key in list(sys.modules.keys()):
+                if key in ("pd_resolve", "pagerduty"):
+                    del sys.modules[key]
+
+            # Replace pagerduty with a sentinel that raises ImportError when used
+            sys.modules["pagerduty"] = None  # type: ignore[assignment]
+
+            with pytest.raises(SystemExit) as exc_info:
+                importlib.import_module("pd_resolve")
+            assert exc_info.value.code == 1
+        finally:
+            # Fully restore sys.modules
+            for key in list(sys.modules.keys()):
+                if key not in saved:
+                    del sys.modules[key]
+            sys.modules.update(saved)
+
+
+# ===========================================================================
+# Tests: check_airflow_runs — non-404 HTTPError branch (line ~380-382)
+# ===========================================================================
+
+
+class TestCheckAirflowRunsHttpErrors:
+    """Additional HTTPError branches for check_airflow_runs."""
+
+    def test_non_404_http_error_raises(self):
+        """A non-404 HTTPError (e.g. 500) raises RuntimeError with generic message."""
+        resolver = _make_resolver()
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        # Create an HTTPError without a `.response` attribute so the 404 branch is skipped
+        http_err = __import__("requests").exceptions.HTTPError(response=mock_response)
+        mock_response.raise_for_status.side_effect = http_err
+        mock_session.get.return_value = mock_response
+
+        with patch.object(resolver, "get_airflow_session", return_value=mock_session):
+            with pytest.raises(RuntimeError, match="Failed to fetch DAG runs"):
+                resolver.check_airflow_runs("some_dag")
+
+    def test_non_http_exception_raises(self):
+        """A generic Exception during DAG runs fetch raises RuntimeError."""
+        resolver = _make_resolver()
+        with patch.object(
+            resolver, "get_airflow_session", side_effect=Exception("unexpected")
+        ):
+            with pytest.raises(RuntimeError, match="Failed to fetch DAG runs"):
+                resolver.check_airflow_runs("some_dag")
+
+    def test_http_error_with_none_response(self):
+        """HTTPError with response=None falls through to the generic RuntimeError branch."""
+        resolver = _make_resolver()
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        # Raise HTTPError whose .response is None
+        http_err = __import__("requests").exceptions.HTTPError(response=None)
+        mock_response.raise_for_status.side_effect = http_err
+        mock_session.get.return_value = mock_response
+
+        with patch.object(resolver, "get_airflow_session", return_value=mock_session):
+            with pytest.raises(RuntimeError, match="Failed to fetch DAG runs"):
+                resolver.check_airflow_runs("some_dag")
+
+
+# ===========================================================================
+# Tests: _detect_aws_profile static method
+# ===========================================================================
+
+
+class TestDetectAwsProfile:
+    """Test PDResolve._detect_aws_profile() static method."""
+
+    def test_returns_none_when_no_credentials_file(self, tmp_path):
+        fake_path = str(tmp_path / "no_credentials")
+        with patch("os.path.expanduser", return_value=fake_path):
+            assert PDResolve._detect_aws_profile() is None
+
+    def test_returns_airflow_section(self, tmp_path):
+        creds = tmp_path / "credentials"
+        creds.write_text("[prod-airflow]\naws_access_key_id = FAKE\n")
+        with patch("os.path.expanduser", return_value=str(creds)):
+            result = PDResolve._detect_aws_profile()
+        assert result == "prod-airflow"
+
+    def test_returns_mwaa_section(self, tmp_path):
+        creds = tmp_path / "credentials"
+        creds.write_text("[mwaa-profile]\naws_access_key_id = FAKE\n")
+        with patch("os.path.expanduser", return_value=str(creds)):
+            result = PDResolve._detect_aws_profile()
+        assert result == "mwaa-profile"
+
+    def test_returns_none_when_no_matching_section(self, tmp_path):
+        creds = tmp_path / "credentials"
+        creds.write_text("[default]\naws_access_key_id = FAKE\n")
+        with patch("os.path.expanduser", return_value=str(creds)):
+            assert PDResolve._detect_aws_profile() is None
+
+    def test_returns_none_on_parse_exception(self, tmp_path):
+        creds = tmp_path / "credentials"
+        creds.write_text("[default]\n")
+        with patch("os.path.expanduser", return_value=str(creds)), \
+             patch("configparser.ConfigParser.read", side_effect=Exception("parse error")):
+            assert PDResolve._detect_aws_profile() is None
+
+
+# ===========================================================================
+# Tests: get_airflow_session — with aws_profile set
+# ===========================================================================
+
+
+class TestGetAirflowSessionWithProfile:
+    """Test that aws_profile is passed to boto3.Session when set."""
+
+    def test_profile_name_passed_to_boto(self):
+        resolver = _make_resolver()
+        resolver.aws_profile = "prod-airflow"
+
+        mock_mwaa_client = MagicMock()
+        mock_mwaa_client.create_web_login_token.return_value = {"WebToken": "tok"}
+        mock_boto_session = MagicMock()
+        mock_boto_session.client.return_value = mock_mwaa_client
+
+        with patch("pd_resolve.boto3.Session", return_value=mock_boto_session) as mock_boto, \
+             patch("pd_resolve.requests.Session") as mock_session_cls:
+            mock_session = MagicMock()
+            mock_session.post.return_value = MagicMock(raise_for_status=MagicMock())
+            mock_session_cls.return_value = mock_session
+
+            resolver.get_airflow_session()
+
+        call_kwargs = mock_boto.call_args[1]
+        assert call_kwargs.get("profile_name") == "prod-airflow"
+
+
+# ===========================================================================
+# Tests: resolve() — failed_runs display branch
+# ===========================================================================
+
+
+class TestResolveNoDAGNameInTitle:
+    """Test resolve() raises when DAG name cannot be extracted from title."""
+
+    def test_raises_when_no_dag_name(self):
+        """resolve() raises RuntimeError when incident title has no DAG name."""
+        resolver = _make_resolver(dry_run=False, no_confirm=True)
+        # Title with no 'DAG <name> has failed' pattern
+        resolver.pd_client.rget.return_value = _pd_incident_response(
+            title="[CRITICAL] Some generic alert with no DAG pattern",
+        )
+        with pytest.raises(RuntimeError, match="Could not extract DAG name from title"):
+            resolver.resolve("Q1HR5H5BXCILO3")
+
+
+class TestResolveConsecSuccessCount:
+    """Test the consecutive success counter in the not-recovered branch."""
+
+    def test_some_leading_successes_before_failure(self):
+        """When latest run succeeds but second fails, consec=1 is logged."""
+        resolver = _make_resolver(dry_run=False, no_confirm=True)
+        resolver.pd_client.rget.return_value = _pd_incident_response(drgn_key=None)
+
+        # Latest run (index 0) is success, second run (index 1) is failed → not recovered
+        runs = _make_airflow_runs(15, all_success=False, failed_indices=[1])
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "dag_runs": [
+                {
+                    "dag_run_id": r.dag_run_id,
+                    "state": r.state,
+                    "start_date": r.start_date,
+                    "end_date": r.end_date,
+                }
+                for r in runs
+            ],
+        }
+        mock_response.raise_for_status = MagicMock()
+        mock_session.get.return_value = mock_response
+
+        with patch.object(resolver, "get_airflow_session", return_value=mock_session):
+            result = resolver.resolve("Q1HR5H5BXCILO3")
+
+        # Not recovered — most recent 2 are not all success
+        assert result.recovered is False
+        assert result.pd_resolved is False
+
+
+class TestResolveFailedRunsDisplay:
+    """Test the branch that logs FAILED runs during resolve()."""
+
+    def test_failed_runs_are_logged(self):
+        """When recent runs include failures, they appear in log output (no crash)."""
+        resolver = _make_resolver(dry_run=False, no_confirm=True)
+
+        # Set up a response with 2 failed runs at indices 3,4 (latest 2 are success)
+        resolver.pd_client.rget.return_value = _pd_incident_response(drgn_key="DRGN-99")
+        runs = _make_airflow_runs(15, all_success=False, failed_indices=[3, 4, 5])
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "dag_runs": [
+                {
+                    "dag_run_id": r.dag_run_id,
+                    "state": r.state,
+                    "start_date": r.start_date,
+                    "end_date": r.end_date,
+                }
+                for r in runs
+            ],
+        }
+        mock_response.raise_for_status = MagicMock()
+        mock_session.get.return_value = mock_response
+
+        mock_issue = MagicMock()
+        mock_issue.fields.status = MagicMock(__str__=lambda self: "Open")
+        resolver.jira_client.issue.return_value = mock_issue
+
+        with patch.object(resolver, "get_airflow_session", return_value=mock_session), \
+             patch.object(resolver, "find_runbook", return_value=None):
+            result = resolver.resolve("Q1HR5H5BXCILO3")
+
+        # Latest 2 runs are success (indices 0,1 not in failed set), so recovered = True
+        assert result.recovered is True
+
+
+# ===========================================================================
+# Tests: resolve() — errors in PD resolve step
+# ===========================================================================
+
+
+class TestResolvePdErrorInExecutionStep:
+    """Test that PD resolve error is captured as errors list entry."""
+
+    def test_pd_resolve_error_captured(self):
+        resolver = _make_resolver(dry_run=False, no_confirm=True)
+        resolver.pd_client.rget.return_value = _pd_incident_response(drgn_key=None)
+        resolver.pd_client.list_all.return_value = []
+
+        runs = _make_airflow_runs(15, all_success=True)
+        mock_session = MagicMock()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "dag_runs": [
+                {
+                    "dag_run_id": r.dag_run_id,
+                    "state": r.state,
+                    "start_date": r.start_date,
+                    "end_date": r.end_date,
+                }
+                for r in runs
+            ],
+        }
+        mock_response.raise_for_status = MagicMock()
+        mock_session.get.return_value = mock_response
+
+        import pagerduty
+        resolver.pd_client.rpost.side_effect = pagerduty.Error("note failed")
+
+        with patch.object(resolver, "get_airflow_session", return_value=mock_session), \
+             patch.object(resolver, "find_runbook", return_value=None), \
+             patch.object(PDResolve, "prompt_drgn_key", return_value=None):
+            result = resolver.resolve("Q1HR5H5BXCILO3")
+
+        assert result.pd_resolved is False
+        assert len(result.errors) >= 1
+        assert any("Failed to add PD note" in e or "Failed to resolve" in e for e in result.errors)
+
+
+# ===========================================================================
+# Tests: main() function
+# ===========================================================================
+
+
+def _make_main_env() -> dict:
+    """Standard env vars required by main()."""
+    return {
+        "PAGERDUTY_API_TOKEN": "fake-pd",
+        "JIRA_SERVER_URL": "https://jira.example.com",
+        "JIRA_PERSONAL_ACCESS_TOKEN": "fake-jira",
+        "JIRA_EMAIL": "noc@example.com",
+        "MWAA_ENVIRONMENT_NAME": "test-airflow",
+        "MWAA_REGION": "us-west-2",
+    }
+
+
+def _mock_resolver_resolve(result: "ResolveResult"):
+    """Patch PDResolve.__init__ and resolve() for main() tests."""
+    def fake_init(self, **kwargs):
+        # Store dry_run/verbose/no_confirm so resolve() can read them
+        self.dry_run = kwargs.get("dry_run", False)
+        self.verbose = kwargs.get("verbose", False)
+        self.no_confirm = kwargs.get("no_confirm", False)
+
+    return (
+        patch("pd_resolve.PDResolve.__init__", fake_init),
+        patch("pd_resolve.PDResolve.resolve", return_value=result),
+    )
+
+
+class TestMain:
+    """Test main() function entry point."""
+
+    def _make_result(self, errors: Optional[List[str]] = None) -> ResolveResult:
+        return ResolveResult(
+            incident_id="Q123",
+            incident_title="Test",
+            dag_name="test_dag",
+            alert_type="unknown",
+            runs_checked=15,
+            recent_successes=15,
+            recovered=True,
+            drgn_key=None,
+            runbook_url=None,
+            drgn_closed=False,
+            pd_resolved=True,
+            errors=errors or [],
+        )
+
+    def test_main_success_exits_0(self):
+        """main() with incident arg and successful resolve exits 0."""
+        from pd_resolve import main
+
+        result = self._make_result()
+        init_patch, resolve_patch = _mock_resolver_resolve(result)
+
+        with patch("sys.argv", ["pd_resolve", "Q123"]), \
+             patch("pd_resolve.require_env", return_value=_make_main_env()), \
+             patch.dict("os.environ", _make_main_env()), \
+             init_patch, resolve_patch:
+            # Should not raise SystemExit (exits 0 implicitly)
+            main()
+
+    def test_main_with_errors_exits_1(self):
+        """main() exits 1 when resolve result has errors."""
+        from pd_resolve import main
+
+        result = self._make_result(errors=["something went wrong"])
+        init_patch, resolve_patch = _mock_resolver_resolve(result)
+
+        with patch("sys.argv", ["pd_resolve", "Q123"]), \
+             patch("pd_resolve.require_env", return_value=_make_main_env()), \
+             patch.dict("os.environ", _make_main_env()), \
+             init_patch, resolve_patch:
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+
+    def test_main_runtime_error_exits_1(self):
+        """main() exits 1 when PDResolve.resolve() raises RuntimeError."""
+        from pd_resolve import main
+
+        def fake_init(self, **kwargs):
+            pass
+
+        with patch("sys.argv", ["pd_resolve", "Q123"]), \
+             patch("pd_resolve.require_env", return_value=_make_main_env()), \
+             patch.dict("os.environ", _make_main_env()), \
+             patch("pd_resolve.PDResolve.__init__", fake_init), \
+             patch("pd_resolve.PDResolve.resolve", side_effect=RuntimeError("boom")):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+
+    def test_main_keyboard_interrupt_exits_130(self):
+        """main() exits 130 on KeyboardInterrupt during resolve."""
+        from pd_resolve import main
+
+        def fake_init(self, **kwargs):
+            pass
+
+        with patch("sys.argv", ["pd_resolve", "Q123"]), \
+             patch("pd_resolve.require_env", return_value=_make_main_env()), \
+             patch.dict("os.environ", _make_main_env()), \
+             patch("pd_resolve.PDResolve.__init__", fake_init), \
+             patch("pd_resolve.PDResolve.resolve", side_effect=KeyboardInterrupt):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 130
+
+    def test_main_no_incident_arg_prompts_and_succeeds(self):
+        """main() without incident arg prompts user and proceeds."""
+        from pd_resolve import main
+
+        result = self._make_result()
+        init_patch, resolve_patch = _mock_resolver_resolve(result)
+
+        with patch("sys.argv", ["pd_resolve"]), \
+             patch("pd_resolve.require_env", return_value=_make_main_env()), \
+             patch.dict("os.environ", _make_main_env()), \
+             patch("builtins.input", return_value="Q123"), \
+             init_patch, resolve_patch:
+            main()
+
+    def test_main_no_incident_empty_input_exits_1(self):
+        """main() without incident and empty user input exits 1."""
+        from pd_resolve import main
+
+        with patch("sys.argv", ["pd_resolve"]), \
+             patch("pd_resolve.require_env", return_value=_make_main_env()), \
+             patch.dict("os.environ", _make_main_env()), \
+             patch("builtins.input", return_value=""):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+
+    def test_main_no_incident_eof_exits_130(self):
+        """main() handles EOFError during incident input and exits 130."""
+        from pd_resolve import main
+
+        with patch("sys.argv", ["pd_resolve"]), \
+             patch("pd_resolve.require_env", return_value=_make_main_env()), \
+             patch.dict("os.environ", _make_main_env()), \
+             patch("builtins.input", side_effect=EOFError):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 130
+
+    def test_main_no_incident_keyboard_interrupt_exits_130(self):
+        """main() handles KeyboardInterrupt during incident input and exits 130."""
+        from pd_resolve import main
+
+        with patch("sys.argv", ["pd_resolve"]), \
+             patch("pd_resolve.require_env", return_value=_make_main_env()), \
+             patch.dict("os.environ", _make_main_env()), \
+             patch("builtins.input", side_effect=KeyboardInterrupt):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 130
+
+    def test_main_dry_run_flag(self):
+        """main() passes --dry-run flag to PDResolve."""
+        from pd_resolve import main
+
+        result = self._make_result()
+        captured_kwargs: dict = {}
+
+        def fake_init(self, **kwargs):
+            captured_kwargs.update(kwargs)
+
+        with patch("sys.argv", ["pd_resolve", "Q123", "--dry-run"]), \
+             patch("pd_resolve.require_env", return_value=_make_main_env()), \
+             patch.dict("os.environ", _make_main_env()), \
+             patch("pd_resolve.PDResolve.__init__", fake_init), \
+             patch("pd_resolve.PDResolve.resolve", return_value=result):
+            main()
+
+        assert captured_kwargs.get("dry_run") is True
+
+    def test_main_no_confirm_flag(self):
+        """main() passes --no-confirm flag to PDResolve."""
+        from pd_resolve import main
+
+        result = self._make_result()
+        captured_kwargs: dict = {}
+
+        def fake_init(self, **kwargs):
+            captured_kwargs.update(kwargs)
+
+        with patch("sys.argv", ["pd_resolve", "Q123", "--no-confirm"]), \
+             patch("pd_resolve.require_env", return_value=_make_main_env()), \
+             patch.dict("os.environ", _make_main_env()), \
+             patch("pd_resolve.PDResolve.__init__", fake_init), \
+             patch("pd_resolve.PDResolve.resolve", return_value=result):
+            main()
+
+        assert captured_kwargs.get("no_confirm") is True
+
+    def test_main_verbose_flag(self):
+        """main() passes --verbose flag to PDResolve."""
+        from pd_resolve import main
+
+        result = self._make_result()
+        captured_kwargs: dict = {}
+
+        def fake_init(self, **kwargs):
+            captured_kwargs.update(kwargs)
+
+        with patch("sys.argv", ["pd_resolve", "Q123", "--verbose"]), \
+             patch("pd_resolve.require_env", return_value=_make_main_env()), \
+             patch.dict("os.environ", _make_main_env()), \
+             patch("pd_resolve.PDResolve.__init__", fake_init), \
+             patch("pd_resolve.PDResolve.resolve", return_value=result):
+            main()
+
+        assert captured_kwargs.get("verbose") is True
+
+    def test_main_aws_profile_from_environment(self):
+        """main() picks up AWS_PROFILE from os.environ."""
+        from pd_resolve import main
+
+        result = self._make_result()
+        captured_kwargs: dict = {}
+
+        def fake_init(self, **kwargs):
+            captured_kwargs.update(kwargs)
+
+        env = _make_main_env()
+        env["AWS_PROFILE"] = "my-aws-profile"
+
+        with patch("sys.argv", ["pd_resolve", "Q123"]), \
+             patch("pd_resolve.require_env", return_value=env), \
+             patch.dict("os.environ", env, clear=False), \
+             patch("pd_resolve.PDResolve.__init__", fake_init), \
+             patch("pd_resolve.PDResolve.resolve", return_value=result):
+            main()
+
+        assert captured_kwargs.get("aws_profile") == "my-aws-profile"
+
+    def test_main_mwaa_env_from_environment(self):
+        """main() picks up MWAA_ENVIRONMENT_NAME and MWAA_REGION from os.environ."""
+        from pd_resolve import main
+
+        result = self._make_result()
+        captured_kwargs: dict = {}
+
+        def fake_init(self, **kwargs):
+            captured_kwargs.update(kwargs)
+
+        env = _make_main_env()
+        env["MWAA_ENVIRONMENT_NAME"] = "custom-airflow-env"
+        env["MWAA_REGION"] = "eu-west-1"
+
+        with patch("sys.argv", ["pd_resolve", "Q123"]), \
+             patch("pd_resolve.require_env", return_value=env), \
+             patch.dict("os.environ", env, clear=False), \
+             patch("pd_resolve.PDResolve.__init__", fake_init), \
+             patch("pd_resolve.PDResolve.resolve", return_value=result):
+            main()
+
+        assert captured_kwargs.get("mwaa_env_name") == "custom-airflow-env"
+        assert captured_kwargs.get("mwaa_region") == "eu-west-1"
