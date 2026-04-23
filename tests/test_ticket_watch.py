@@ -39,7 +39,7 @@ def _make_issue(
     comments: list | None = None,
 ) -> SimpleNamespace:
     """Create a mock Jira issue object."""
-    assignee = SimpleNamespace(displayName=assignee_name) if assignee_name else None
+    assignee = SimpleNamespace(displayName=assignee_name, name=assignee_name) if assignee_name else None
     comment_obj = SimpleNamespace(comments=comments or [])
     return SimpleNamespace(
         key=key,
@@ -177,6 +177,7 @@ class TestClassifyTicket:
         result = tool.classify_ticket(issue)
         assert result["category"] == "stale"
         assert result["assignee"] == "John Doe"
+        assert result["assignee_username"] == "John Doe"
         assert result["last_comment_date"] is not None
         assert result["days_since_comment"] is not None
         assert result["days_since_comment"] >= 5.0
@@ -317,7 +318,7 @@ class TestClassifyTicket:
         issue = _make_issue(assignee_name=None, created=old_time)
         result = tool.classify_ticket(issue)
         expected_keys = {
-            "key", "summary", "status", "assignee", "created",
+            "key", "summary", "status", "assignee", "assignee_username", "created",
             "age_hours", "category", "last_comment_date",
             "days_since_comment", "is_repeat_ping", "ping_count",
             "last_assignee_response",

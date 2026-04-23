@@ -144,12 +144,14 @@ class TicketWatch:
         # Assignee check
         assignee = issue.fields.assignee
         assignee_name = assignee.displayName if assignee else None
+        assignee_username = assignee.name if assignee else None
 
         result: Dict[str, Any] = {
             "key": issue.key,
             "summary": issue.fields.summary,
             "status": str(issue.fields.status),
             "assignee": assignee_name,
+            "assignee_username": assignee_username,
             "created": created_dt,
             "age_hours": age_hours,
             "category": "ok",
@@ -197,20 +199,20 @@ class TicketWatch:
 
         return result
 
-    def post_ping(self, issue_key: str, assignee_name: str) -> str:
+    def post_ping(self, issue_key: str, assignee_username: str) -> str:
         """
         Post a ping comment on a Jira ticket.
 
         Args:
             issue_key: Jira issue key
-            assignee_name: Assignee display name for mention
+            assignee_username: Assignee username (name field) for mention
 
         Returns:
             The phrase that was posted
         """
         phrase = random.choice(PING_PHRASES)
-        # Use [~displayName] for Jira Server/DC mention
-        comment_body = f"[~{assignee_name}] {phrase}"
+        # [~username] triggers Jira Server/DC notification; displayName does not
+        comment_body = f"[~{assignee_username}] {phrase}"
 
         if self.dry_run:
             print(f"  [DRY-RUN] Would comment on {issue_key}: {comment_body}")
@@ -283,9 +285,9 @@ class TicketWatch:
         # Post pings
         if not self.no_comment:
             for result in results:
-                if result["assignee"]:
+                if result["assignee_username"]:
                     result["pinged_phrase"] = self.post_ping(
-                        result["key"], result["assignee"]
+                        result["key"], result["assignee_username"]
                     )
 
         # Print report
@@ -326,9 +328,9 @@ class TicketWatch:
         # Step 3: Post pings for stale/pinged tickets
         if not self.no_comment:
             for result in results:
-                if result["category"] in ("stale", "pinged") and result["assignee"]:
+                if result["category"] in ("stale", "pinged") and result["assignee_username"]:
                     result["pinged_phrase"] = self.post_ping(
-                        result["key"], result["assignee"]
+                        result["key"], result["assignee_username"]
                     )
 
         # Step 4: Generate report
