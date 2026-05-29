@@ -29,6 +29,13 @@ openpyxl>=3.1.0  # Read/write Excel files for NOC Report Assistant
 freezegun>=1.2.0  # Time-freezing for deterministic datetime tests
 mutmut>=2.5.0  # Mutation testing for test quality verification
 
+# GoAnywhere Web Client scraping
+# ------------------------------
+# Used by: ga-job (read-only CLI for Completed Jobs and Monitors)
+beautifulsoup4>=4.12.0  # HTML parser for JSF page scraping
+requests>=2.31.0  # HTTP client for GA session-cookie calls
+selenium>=4.20.0  # OKTA login automation (interactive, used once per session)
+
 # Optional enhancements
 # ---------------------
 # colorama>=0.4.6  # Cross-platform colored terminal text (future enhancement)

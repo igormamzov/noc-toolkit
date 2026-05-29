@@ -40,7 +40,7 @@ except ImportError:
     _ENV_MESSAGE = "Warning: python-dotenv not installed (pip install python-dotenv)"
 
 # Version information
-VERSION = "0.6.1"
+VERSION = "0.7.0"
 TOOLKIT_NAME = "NOC Toolkit"
 
 # Directory paths — tools are bundled inside _MEIPASS, config is next to EXE
@@ -357,6 +357,27 @@ class NOCToolkit:
                 name="Ticket Watch",
                 description="Monitor escalation tickets for unassigned/stale states",
                 script_path="tools/ticket-watch/ticket_watch.py",
+                enabled=True
+            ),
+            ToolDefinition(
+                tool_id="ga-job",
+                name="GoAnywhere Lookup",
+                description="Read-only GoAnywhere CLI: find jobs and monitors",
+                script_path="tools/ga-job/ga_job.py",
+                enabled=True
+            ),
+            ToolDefinition(
+                tool_id="cdt",
+                name="CDT Control Panel",
+                description="Read-only CDT API: streaming/batch dashboards, SLA breaches",
+                script_path="tools/cdt/cdt.py",
+                enabled=True
+            ),
+            ToolDefinition(
+                tool_id="auto-close",
+                name="Auto-Close Transient Failures",
+                description="Close DRGN tickets for Databricks jobs that already recovered",
+                script_path="tools/auto-close/auto_close.py",
                 enabled=True
             ),
         ]
