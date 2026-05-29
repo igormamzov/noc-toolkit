@@ -211,8 +211,8 @@ function _doAddRow(ws, data) {
   if (!ttmHasData) {
     targetRow = ttmRow;
   } else {
-    // Insert row before Permalinks
-    ws.insertRowBefore(permalinksRow);
+    // Insert row after last TTM row (inherits its formatting, not Permalinks')
+    ws.insertRowAfter(permalinksRow - 1);
     targetRow = permalinksRow;
     // Permalinks shifts down by 1
   }
@@ -246,6 +246,27 @@ function _doAddRow(ws, data) {
   // Set text wrap on the new row (C:F) and auto-resize
   ws.getRange(targetRow, 3, 1, 4).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
   ws.autoResizeRows(targetRow, 1);
+
+  // Re-merge A:B for the entire TTM section and fix formatting
+  var newLayout = _getLayout(ws);
+  var ttmStart = newLayout.ttmRow;
+  var ttmEnd = newLayout.ttmEnd || newLayout.permalinksRow - 1;
+  var ttmCount = ttmEnd - ttmStart + 1;
+  if (ttmCount > 0) {
+    // Read background color from "from previous shifts" row as reference
+    var refBg = ws.getRange(newLayout.fromPrevRow, 3).getBackground();
+
+    var labelRange = ws.getRange(ttmStart, 1, ttmCount, 2);
+    labelRange.breakApart();
+    labelRange.merge();
+    labelRange.setValue("Things to monitor");
+    labelRange.setVerticalAlignment("middle");
+    labelRange.setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);
+    labelRange.setBackground(refBg);
+
+    // Match background on all TTM data rows (C:F) to the rest of the sheet
+    ws.getRange(ttmStart, 3, ttmCount, 4).setBackground(refBg);
+  }
 
   SpreadsheetApp.flush();
   return { ok: true, insertedRow: targetRow };
