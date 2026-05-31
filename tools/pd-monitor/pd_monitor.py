@@ -7,6 +7,7 @@ with appropriate comments. Runs continuously for 1 hour.
 """
 
 import os
+import re
 import sys
 import json
 import argparse
@@ -14,12 +15,29 @@ import random
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from noc_utils import load_env, new_pd_client
 
+# Make the sibling pd-create-drgn package importable for the auto-create
+# DRGN feature. The launcher already wires this up; for direct invocation
+# of pd_monitor.py we add the path ourselves.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PD_CREATE_DRGN_DIR = _SCRIPT_DIR.parent / "pd-create-drgn"
+if str(_PD_CREATE_DRGN_DIR) not in sys.path:
+    sys.path.insert(0, str(_PD_CREATE_DRGN_DIR))
+
+try:
+    from pd_create_drgn import (  # type: ignore
+        create_drgn_for_incident,
+        CreateDRGNError,
+    )
+    _PD_CREATE_DRGN_AVAILABLE = True
+except ImportError:
+    _PD_CREATE_DRGN_AVAILABLE = False
+
 # Version information
-VERSION = "0.1.4"
+VERSION = "0.2.0"
 
 # Title patterns for silent acknowledge (ack only, no comment).
 # If an incident title contains any of these substrings (case-insensitive),
@@ -32,6 +50,42 @@ SILENT_ACK_PATTERNS = [
     "Missing East",
     "Missing International",
     "Missing UK",
+]
+
+# Title-substring rules for "skip auto-create DRGN" (case-insensitive).
+# Built from a 2026-05-31 audit of acked incidents that NOC handled
+# without creating DRGN. Order matters only for which reason gets logged
+# first if multiple match.
+#
+# Each entry is (label, predicate) where predicate(title_lower: str) -> bool.
+# Using predicates instead of substrings so we can also handle regex cases
+# like "DSSD-12345" anywhere in the title.
+_DSSD_KEY_RE = re.compile(r"\bDSSD-\d+\b", re.IGNORECASE)
+
+DRGN_SKIP_RULES: List[Tuple[str, Callable[[str], bool]]] = [
+    # 1. NOC explicitly tagged the incident as "ignore" — usually means
+    #    the alert is known noise / disabled / manually handled.
+    (
+        "ignore-in-title",
+        lambda title_lower: "ignore" in title_lower,
+    ),
+    # 2. Title already references a DSSD ticket — typically means the
+    #    underlying chronic issue is tracked there (DSSD-31131 asra,
+    #    DSSD-31259 sfmc_backfeed, etc.) and a per-incident DRGN would
+    #    be a duplicate.
+    (
+        "dssd-key-in-title",
+        lambda title_lower: bool(_DSSD_KEY_RE.search(title_lower)),
+    ),
+    # 3. Silent-ack patterns — these get acknowledged without a comment;
+    #    they're known recurring "missing region" alerts that don't need
+    #    individual DRGN tracking.
+    (
+        "silent-ack-pattern",
+        lambda title_lower: any(
+            pattern.lower() in title_lower for pattern in SILENT_ACK_PATTERNS
+        ),
+    ),
 ]
 
 # Comment phrases for auto-acknowledge (to look like a real engineer)
@@ -85,7 +139,9 @@ class PagerDutyMonitor:
         dry_run: bool = False,
         verbose: bool = False,
         details: bool = False,
-        background: bool = False
+        background: bool = False,
+        auto_create_drgn: bool = True,
+        pd_ui_bearer_token: Optional[str] = None,
     ) -> None:
         """
         Initialize the PagerDuty monitor.
@@ -99,8 +155,16 @@ class PagerDutyMonitor:
             verbose: If True, print detailed output
             details: If True, show detailed check information
             background: If True, suppress interactive prompts and progress bar
+            auto_create_drgn: If True, also auto-create a DRGN ticket via
+                pd-create-drgn for each newly acknowledged incident, except
+                titles that match DRGN_SKIP_RULES. Requires
+                pd_ui_bearer_token. If False or no bearer, the feature is
+                silently disabled (a warning prints once at startup).
+            pd_ui_bearer_token: PD UI session bearer (`pdus+_...`). Required
+                for auto_create_drgn; ignored otherwise.
         """
         self.pagerduty_session = new_pd_client(pagerduty_api_token)
+        self.pagerduty_api_token = pagerduty_api_token
         self.comment_pattern = comment_pattern
         self.random_comments = (comment_pattern.lower() == "working on it")
         self.check_interval_seconds = check_interval_seconds
@@ -112,6 +176,29 @@ class PagerDutyMonitor:
         self.user_id = self._get_current_user_id()
         self.user_email = self._get_user_email()
         self.processed_incidents: Set[str] = set()
+
+        # Resolve whether the auto-create-DRGN feature is actually usable
+        # this run. Three preconditions: requested by the user, the sibling
+        # module imports cleanly, and a PD UI bearer is present. We surface
+        # a one-time warning instead of crashing so the rest of the monitor
+        # keeps working when the bearer expires.
+        self.auto_create_drgn = bool(
+            auto_create_drgn and _PD_CREATE_DRGN_AVAILABLE and pd_ui_bearer_token
+        )
+        self.pd_ui_bearer_token = pd_ui_bearer_token or ""
+        if auto_create_drgn and not self.auto_create_drgn:
+            if not _PD_CREATE_DRGN_AVAILABLE:
+                print(
+                    "  [warn] auto-create DRGN disabled: pd-create-drgn module "
+                    "not importable (check tools/pd-create-drgn/ exists).",
+                    file=sys.stderr,
+                )
+            elif not pd_ui_bearer_token:
+                print(
+                    "  [warn] auto-create DRGN disabled: PD_UI_BEARER_TOKEN "
+                    "not set in .env. See tools/pd-create-drgn/README.md.",
+                    file=sys.stderr,
+                )
 
     def _get_current_user_id(self) -> str:
         """
@@ -151,6 +238,104 @@ class PagerDutyMonitor:
         """
         title_lower = title.lower()
         return any(pattern.lower() in title_lower for pattern in SILENT_ACK_PATTERNS)
+
+    @staticmethod
+    def _should_skip_drgn(title: str) -> Tuple[bool, Optional[str]]:
+        """
+        Decide whether auto-create DRGN must be skipped for this incident.
+
+        Returns:
+            (True, reason_label) — skip; reason_label is one of the labels
+                from DRGN_SKIP_RULES (used for log lines / metrics).
+            (False, None) — proceed with DRGN creation.
+        """
+        title_lower = (title or "").lower()
+        for label, predicate in DRGN_SKIP_RULES:
+            if predicate(title_lower):
+                return True, label
+        return False, None
+
+    def _try_auto_create_drgn(
+        self,
+        incident_id: str,
+        incident_title: str,
+    ) -> Dict[str, Optional[str]]:
+        """
+        Attempt to create a DRGN for the given incident, logging the outcome.
+
+        Always returns a dict (never raises) so the monitor's per-incident
+        loop never aborts because of DRGN-side problems. Possible shapes:
+            {"status": "skipped",   "reason": <skip-rule-label>}
+            {"status": "disabled",  "reason": "feature off"}
+            {"status": "dry_run",   "reason": None}
+            {"status": "created",   "drgn_key": "DRGN-NNNNN", "already": False}
+            {"status": "existed",   "drgn_key": "DRGN-NNNNN", "already": True}
+            {"status": "error",     "reason": "<error message>"}
+        """
+        if not self.auto_create_drgn:
+            return {"status": "disabled", "reason": "feature off"}
+
+        skip, skip_reason = self._should_skip_drgn(incident_title)
+        if skip:
+            return {"status": "skipped", "reason": skip_reason}
+
+        if self.dry_run:
+            return {"status": "dry_run", "reason": None}
+
+        try:
+            result = create_drgn_for_incident(
+                incident_id=incident_id,
+                pagerduty_api_token=self.pagerduty_api_token,
+                pd_ui_bearer_token=self.pd_ui_bearer_token,
+            )
+        except CreateDRGNError as error:
+            return {"status": "error", "reason": str(error)}
+        except Exception as error:  # noqa: BLE001 — never break the monitor loop
+            return {"status": "error", "reason": f"unexpected: {error}"}
+
+        drgn_key = result.get("drgn_key")
+        if not drgn_key:
+            return {"status": "error", "reason": "no drgn_key in response"}
+
+        return {
+            "status": "existed" if result.get("already_existed") else "created",
+            "drgn_key": drgn_key,
+            "already": bool(result.get("already_existed")),
+        }
+
+    def _print_drgn_outcome(
+        self,
+        drgn_outcome: Dict[str, Optional[str]],
+        summary: Dict,
+    ) -> None:
+        """
+        Render one log line for the DRGN-creation outcome and bump summary
+        counters. Kept minimal so the existing ack/comment lines stay the
+        primary signal — DRGN is always one extra line below them.
+        """
+        status = drgn_outcome.get("status")
+        if status == "skipped":
+            reason = drgn_outcome.get("reason") or "unknown"
+            print(f"  [skip-drgn] reason: {reason}")
+            summary['drgn_skipped'] += 1
+            summary['drgn_skip_reasons'][reason] = (
+                summary['drgn_skip_reasons'].get(reason, 0) + 1
+            )
+        elif status == "created":
+            print(f"  [drgn] created {drgn_outcome.get('drgn_key')}")
+            summary['drgn_created'] += 1
+        elif status == "existed":
+            print(f"  [drgn] already existed: {drgn_outcome.get('drgn_key')}")
+            summary['drgn_existed'] += 1
+        elif status == "dry_run":
+            print(f"  [drgn] [DRY RUN] would attempt creation")
+        elif status == "disabled":
+            # Feature off — don't spam a line for every incident; the startup
+            # warning already covered this.
+            pass
+        elif status == "error":
+            print(f"  [drgn] error: {drgn_outcome.get('reason')}")
+            summary['drgn_errors'] += 1
 
     def _pick_random_comment(self) -> str:
         """Pick a random comment phrase, with 20% typo chance and 50% lowercase chance."""
@@ -358,6 +543,7 @@ class PagerDutyMonitor:
             comment_text = self._pick_random_comment() if self.random_comments else self.comment_pattern
 
             if self.dry_run:
+                drgn_outcome = self._try_auto_create_drgn(incident_id, incident_title)
                 self.processed_incidents.add(incident_id)
                 return {
                     'success': True,
@@ -365,7 +551,8 @@ class PagerDutyMonitor:
                     'message': f"[DRY RUN] Would add '{comment_text}' and acknowledge {incident_id}",
                     'url': incident_url,
                     'comment_added': True,
-                    'logged_to_file': False
+                    'logged_to_file': False,
+                    'drgn': drgn_outcome,
                 }
 
             # Add comment
@@ -390,6 +577,7 @@ class PagerDutyMonitor:
                     'logged_to_file': False
                 }
 
+            drgn_outcome = self._try_auto_create_drgn(incident_id, incident_title)
             self.processed_incidents.add(incident_id)
             return {
                 'success': True,
@@ -397,11 +585,13 @@ class PagerDutyMonitor:
                 'message': f"Added '{comment_text}' and acknowledged",
                 'url': incident_url,
                 'comment_added': True,
-                'logged_to_file': False
+                'logged_to_file': False,
+                'drgn': drgn_outcome,
             }
         elif not has_comments and silent:
             # Silent-ack pattern — acknowledge without posting a comment
             if self.dry_run:
+                drgn_outcome = self._try_auto_create_drgn(incident_id, incident_title)
                 self.processed_incidents.add(incident_id)
                 return {
                     'success': True,
@@ -409,7 +599,8 @@ class PagerDutyMonitor:
                     'message': f"[DRY RUN] Would acknowledge {incident_id} (silent-ack pattern, no comment)",
                     'url': incident_url,
                     'comment_added': False,
-                    'logged_to_file': False
+                    'logged_to_file': False,
+                    'drgn': drgn_outcome,
                 }
 
             if not self.acknowledge_incident(incident_id):
@@ -422,6 +613,10 @@ class PagerDutyMonitor:
                     'logged_to_file': False
                 }
 
+            # Silent-ack patterns are explicitly listed in DRGN_SKIP_RULES,
+            # so _try_auto_create_drgn will return status=skipped here. We
+            # still call it to keep the log line consistent across paths.
+            drgn_outcome = self._try_auto_create_drgn(incident_id, incident_title)
             self.processed_incidents.add(incident_id)
             return {
                 'success': True,
@@ -429,7 +624,8 @@ class PagerDutyMonitor:
                 'message': f"Acknowledged (silent-ack, no comment)",
                 'url': incident_url,
                 'comment_added': False,
-                'logged_to_file': False
+                'logged_to_file': False,
+                'drgn': drgn_outcome,
             }
         else:
             # Has comments - check if "working on it" exists
@@ -539,7 +735,14 @@ class PagerDutyMonitor:
             'acknowledged': 0,
             'silent_ack': 0,
             'already_processed': 0,
-            'errors': []
+            'errors': [],
+            # auto-create DRGN tally — keeps the per-cycle table truthful
+            # even when DRGN_SKIP_RULES filters most incidents out.
+            'drgn_created': 0,
+            'drgn_existed': 0,
+            'drgn_skipped': 0,
+            'drgn_errors': 0,
+            'drgn_skip_reasons': {},  # reason -> count
         }
 
         for incident in incidents:
@@ -564,6 +767,12 @@ class PagerDutyMonitor:
                 if not result.get('comment_added') and not result.get('logged_to_file'):
                     action_detail.append("acknowledged")
                 print(f"  → {result['message']} ({', '.join(action_detail)})")
+
+                # DRGN auto-create line (only printed when the path actually
+                # tried — i.e. process_incident attached a 'drgn' key).
+                drgn_outcome = result.get('drgn')
+                if drgn_outcome:
+                    self._print_drgn_outcome(drgn_outcome, summary)
 
                 # Update summary
                 if result['action'] == 'new_incident':
@@ -658,6 +867,29 @@ class PagerDutyMonitor:
                         print(f"  ⚠️  Need attention (logged to file): {summary['needs_attention']}")
                     if summary['errors']:
                         print(f"  ❌ Errors: {len(summary['errors'])}")
+                    # DRGN auto-create cycle stats — only printed if the
+                    # feature was actually exercised this cycle.
+                    if (
+                        summary['drgn_created']
+                        + summary['drgn_existed']
+                        + summary['drgn_skipped']
+                        + summary['drgn_errors']
+                    ) > 0:
+                        if summary['drgn_created']:
+                            print(f"  📝 DRGN created: {summary['drgn_created']}")
+                        if summary['drgn_existed']:
+                            print(f"  📝 DRGN already existed: {summary['drgn_existed']}")
+                        if summary['drgn_skipped']:
+                            reasons_breakdown = ", ".join(
+                                f"{count} {reason}"
+                                for reason, count in sorted(
+                                    summary['drgn_skip_reasons'].items(),
+                                    key=lambda kv: -kv[1],
+                                )
+                            )
+                            print(f"  ⏭  DRGN skipped: {summary['drgn_skipped']} ({reasons_breakdown})")
+                        if summary['drgn_errors']:
+                            print(f"  ❌ DRGN errors: {summary['drgn_errors']}")
                     print()  # Extra line after incident info
                 else:
                     # Only show "no incidents" in details mode
@@ -790,6 +1022,18 @@ Examples:
         action='store_true',
         help='Background mode: skip duration menu, suppress progress bar (used by noc-toolkit)'
     )
+    parser.add_argument(
+        '--no-auto-create-drgn',
+        action='store_true',
+        help=(
+            'Disable auto-creating DRGN tickets for newly acknowledged '
+            'incidents. By default the monitor calls pd-create-drgn for '
+            'each incident whose title does not match DRGN_SKIP_RULES '
+            '(IGNORE / DSSD-key / silent-ack patterns). Requires '
+            'PD_UI_BEARER_TOKEN in .env; if missing, auto-create is '
+            'silently disabled with a startup warning.'
+        ),
+    )
 
     return parser.parse_args()
 
@@ -880,6 +1124,12 @@ def main() -> None:
         config['details'] = False
     if args.background:
         config['background'] = True
+
+    # Auto-create DRGN feature: on by default, opt out via flag.
+    # Bearer is read here so the monitor can keep functioning when the
+    # bearer is absent (just with auto-create silently disabled).
+    config['auto_create_drgn'] = not args.no_auto_create_drgn
+    config['pd_ui_bearer_token'] = os.environ.get('PD_UI_BEARER_TOKEN', '') or None
 
     # Create monitor instance
     try:
