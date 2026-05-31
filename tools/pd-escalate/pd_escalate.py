@@ -12,10 +12,20 @@ Automates the post-DSSD-creation escalation workflow:
 import os
 import re
 import sys
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Version information
-VERSION = "0.2.0"
+VERSION = "0.3.0"
+
+# Add sibling pd-create-drgn dir to sys.path so we can call its API directly
+# instead of shelling out. The launcher already adds tools/common; we extend
+# that for cases where the user runs this script standalone.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PD_CREATE_DRGN_DIR = _SCRIPT_DIR.parent / "pd-create-drgn"
+for _path in (_PD_CREATE_DRGN_DIR,):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
 
 try:
     import pagerduty
@@ -25,6 +35,18 @@ except ImportError as import_error:
     print(f"Error: Missing required dependencies. Please run: pip install -r requirements.txt")
     print(f"Details: {import_error}")
     sys.exit(1)
+
+# Optional sibling tool — auto-create DRGN if missing. Without PD_UI_BEARER_TOKEN
+# in .env the import still succeeds but the function will surface a clear
+# "missing env" error at call time.
+try:
+    from pd_create_drgn import (  # type: ignore
+        create_drgn_for_incident,
+        CreateDRGNError,
+    )
+    _PD_CREATE_DRGN_AVAILABLE = True
+except ImportError:
+    _PD_CREATE_DRGN_AVAILABLE = False
 
 # Regex for detecting DRGN tickets in text (fallback)
 DRGN_PATTERN = re.compile(r'\b(DRGN-\d+)\b')
@@ -433,6 +455,7 @@ class EscalateTool:
         dssd_key: str,
         drgn_key: Optional[str] = None,
         no_auto_dssd: bool = False,
+        auto_create_drgn: bool = True,
     ) -> None:
         """
         Execute the full escalation workflow.
@@ -478,10 +501,55 @@ class EscalateTool:
                 drgn_key = self.detect_drgn_from_notes(incident_id)
                 if drgn_key:
                     print(f"  Found in notes: {drgn_key}")
+                elif auto_create_drgn and _PD_CREATE_DRGN_AVAILABLE:
+                    # Last resort: simulate the PD UI's "Create Jira Issue"
+                    # button via pd-create-drgn. Removes the manual step
+                    # that used to interrupt the escalation workflow.
+                    print("  No DRGN found — auto-creating via pd-create-drgn...")
+                    pd_token = os.environ.get("PAGERDUTY_API_TOKEN", "")
+                    ui_bearer = os.environ.get("PD_UI_BEARER_TOKEN", "")
+                    if not ui_bearer:
+                        raise RuntimeError(
+                            f"No DRGN linked to incident {incident_id} and "
+                            f"PD_UI_BEARER_TOKEN is not set in .env, so "
+                            f"auto-create can't run. Either set the bearer "
+                            f"(see tools/pd-create-drgn/README.md) or pass "
+                            f"--drgn DRGN-NNNN explicitly."
+                        )
+                    try:
+                        creation_result = create_drgn_for_incident(
+                            incident_id=incident_id,
+                            pagerduty_api_token=pd_token,
+                            pd_ui_bearer_token=ui_bearer,
+                            dry_run=self.dry_run,
+                        )
+                    except CreateDRGNError as create_error:
+                        raise RuntimeError(
+                            f"Auto-creating DRGN for {incident_id} failed: "
+                            f"{create_error}. Use --drgn DRGN-NNNN to bypass."
+                        ) from create_error
+
+                    drgn_key = creation_result.get("drgn_key")
+                    if not drgn_key:
+                        raise RuntimeError(
+                            f"pd-create-drgn returned no DRGN key for {incident_id} "
+                            f"(dry-run mode?). Re-run without --dry-run or pass --drgn."
+                        )
+                    if creation_result.get("already_existed"):
+                        print(f"  Auto-create discovered existing DRGN: {drgn_key}")
+                    else:
+                        print(f"  Auto-created DRGN: {drgn_key}")
                 else:
                     pd_url = incident_info['html_url']
+                    hint = (
+                        "Auto-create disabled (--no-auto-create-drgn). "
+                        if not auto_create_drgn
+                        else "pd-create-drgn module not importable — "
+                        "check tools/pd-create-drgn/ exists. "
+                    )
                     raise RuntimeError(
                         f"No DRGN ticket linked to incident {incident_id}. "
+                        f"{hint}"
                         f"Open PD incident and press 'Create Jira Issue' button: {pd_url} "
                         f"Then re-run this tool."
                     )
@@ -572,6 +640,17 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        '--no-auto-create-drgn',
+        action='store_true',
+        help=(
+            'Disable auto-creating the DRGN ticket via pd-create-drgn when one '
+            'is missing. Default behaviour: if no DRGN is linked, the tool '
+            'simulates the PD UI "Create Jira Issue" button to create one '
+            '(needs PD_UI_BEARER_TOKEN in .env). With this flag, missing DRGN '
+            'aborts the run instead.'
+        ),
+    )
+    parser.add_argument(
         '--dry-run', '-n',
         action='store_true',
         help='Simulate without making API mutations',
@@ -610,6 +689,7 @@ def main() -> None:
             dssd_key=dssd_key,
             drgn_key=drgn_key,
             no_auto_dssd=args.no_auto_dssd,
+            auto_create_drgn=not args.no_auto_create_drgn,
         )
     except RuntimeError as error:
         print(f"\nError: {error}", file=sys.stderr)
