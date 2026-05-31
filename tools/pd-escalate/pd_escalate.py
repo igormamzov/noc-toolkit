@@ -15,7 +15,7 @@ import sys
 from typing import Any, Dict, Optional
 
 # Version information
-VERSION = "0.1.1"
+VERSION = "0.2.0"
 
 try:
     import pagerduty
@@ -31,6 +31,18 @@ DRGN_PATTERN = re.compile(r'\b(DRGN-\d+)\b')
 
 # Jira transition ID for "Escalated" status
 ESCALATED_TRANSITION_ID = "51"
+
+# Name of the DRGN custom field that drives auto-DSSD creation.
+# When set (any value), the "DRGN → Escalated" Jira automation rule fires and
+# spawns a fresh DSSD Escalation ticket. Setting this field to None *before*
+# the transition suppresses that automation — used when we already have a
+# DSSD to link against (chronic issue tracked elsewhere) and don't want a
+# duplicate.
+CDS_OPT_ROLE_FIELD_NAME = "CDS Opt role"
+
+# Optional override: if the env var is set, use this customfield ID directly
+# instead of looking it up by name. Useful if the field is renamed in Jira.
+CDS_OPT_ROLE_FIELD_ENV = "JIRA_CDS_OPT_ROLE_FIELD_ID"
 
 
 def extract_incident_id(incident_input: str) -> str:
@@ -74,6 +86,7 @@ class EscalateTool:
         )
         self.user_email: str = ""
         self.user_id: str = ""
+        self._cds_opt_role_field_id: Optional[str] = None
 
     def get_current_user(self) -> None:
         """
@@ -218,6 +231,90 @@ class EscalateTool:
                 f"Failed to link {drgn_key} → {dssd_key}: {error}"
             ) from error
 
+    def resolve_cds_opt_role_field_id(self) -> str:
+        """
+        Look up the customfield_NNNNN ID for "CDS Opt role".
+
+        Resolution order:
+        1. Env override JIRA_CDS_OPT_ROLE_FIELD_ID (skip Jira lookup)
+        2. jira.fields() match by case-insensitive name
+        3. Cached on first successful resolution
+
+        Returns:
+            The Jira customfield ID string (e.g. "customfield_45204")
+
+        Raises:
+            RuntimeError: If the field cannot be resolved.
+        """
+        if self._cds_opt_role_field_id:
+            return self._cds_opt_role_field_id
+
+        env_override = os.environ.get(CDS_OPT_ROLE_FIELD_ENV, "").strip()
+        if env_override:
+            self._cds_opt_role_field_id = env_override
+            return env_override
+
+        try:
+            all_fields = self.jira_client.fields()
+        except JIRAError as error:
+            raise RuntimeError(
+                f"Failed to fetch Jira field list while resolving "
+                f"'{CDS_OPT_ROLE_FIELD_NAME}': {error}"
+            ) from error
+
+        target_name_lower = CDS_OPT_ROLE_FIELD_NAME.lower()
+        for field_definition in all_fields:
+            if field_definition.get('name', '').lower() == target_name_lower:
+                field_id = field_definition.get('id', '')
+                if not field_id:
+                    continue
+                self._cds_opt_role_field_id = field_id
+                return field_id
+
+        raise RuntimeError(
+            f"Could not find Jira custom field named '{CDS_OPT_ROLE_FIELD_NAME}'. "
+            f"Set {CDS_OPT_ROLE_FIELD_ENV}=customfield_NNNNN in your .env to override."
+        )
+
+    def clear_cds_opt_role(self, drgn_key: str) -> None:
+        """
+        Clear the "CDS Opt role" field on a DRGN ticket.
+
+        This MUST run before the Escalated transition — the Jira automation
+        rule that auto-creates a DSSD checks the field at transition time.
+        Clearing it after the transition is too late.
+
+        Tries setting the field to None first; if Jira rejects None for a
+        single-select field, the user should set the env override and pick
+        an explicit "None"-equivalent option ID instead.
+
+        Args:
+            drgn_key: DRGN issue key
+        """
+        field_id = self.resolve_cds_opt_role_field_id()
+
+        if self.dry_run:
+            print(
+                f"  [DRY-RUN] Would clear {drgn_key}.{field_id} "
+                f"('{CDS_OPT_ROLE_FIELD_NAME}' = None) to suppress auto-DSSD"
+            )
+            return
+
+        try:
+            issue = self.jira_client.issue(drgn_key)
+            issue.update(fields={field_id: None})
+            print(
+                f"  Cleared: {drgn_key}.{field_id} "
+                f"('{CDS_OPT_ROLE_FIELD_NAME}' = None) — auto-DSSD suppressed"
+            )
+        except JIRAError as error:
+            raise RuntimeError(
+                f"Failed to clear '{CDS_OPT_ROLE_FIELD_NAME}' on {drgn_key} "
+                f"(field {field_id}): {error}. "
+                f"If the field requires an explicit option ID, set "
+                f"{CDS_OPT_ROLE_FIELD_ENV} and pick an option manually."
+            ) from error
+
     def transition_to_escalated(self, drgn_key: str) -> None:
         """
         Transition a DRGN ticket to "Escalated" status (transition ID 51).
@@ -243,6 +340,7 @@ class EscalateTool:
         drgn_key: str,
         dssd_key: str,
         dssd_info: Dict[str, str],
+        no_auto_dssd: bool = False,
     ) -> None:
         """
         Add a PD note with escalation details.
@@ -252,11 +350,25 @@ class EscalateTool:
             drgn_key: DRGN issue key
             dssd_key: DSSD issue key
             dssd_info: DSSD issue details (status, assignee)
+            no_auto_dssd: If True, the note explains that the DSSD was
+                pre-existing and auto-DSSD creation was suppressed.
         """
+        if no_auto_dssd:
+            second_line = (
+                f"{drgn_key} linked \"is blocked by\" existing {dssd_key} "
+                f"('{CDS_OPT_ROLE_FIELD_NAME}' cleared, auto-DSSD suppressed), "
+                f"status → Escalated"
+            )
+        else:
+            second_line = (
+                f"{drgn_key} linked \"is blocked by\" {dssd_key}, "
+                f"status → Escalated"
+            )
+
         note_content = (
             f"Escalated to {dssd_key} - {dssd_info['status']} - {dssd_info['assignee']}\n"
             f"{self.jira_base_url}/{dssd_key}\n"
-            f"{drgn_key} linked \"is blocked by\" {dssd_key}, status → Escalated\n"
+            f"{second_line}\n"
             f"Notified #cds-ops-24x7-int"
         )
 
@@ -283,6 +395,7 @@ class EscalateTool:
         dssd_key: str,
         incident_title: str,
         error_summary: str,
+        no_auto_dssd: bool = False,
     ) -> None:
         """
         Print a Slack notification template ready to paste into #cds-ops-24x7-int.
@@ -291,14 +404,21 @@ class EscalateTool:
             dssd_key: DSSD issue key
             incident_title: PD incident title
             error_summary: Brief error description for the blockquote
+            no_auto_dssd: If True, the template wording emphasizes that the
+                DSSD pre-existed and was linked manually (not auto-created).
         """
         dssd_url = f"{self.jira_base_url}/{dssd_key}"
+        intro = (
+            f"Please have a look at existing {dssd_key} (linked to current incident)"
+            if no_auto_dssd
+            else f"Please have a look at {dssd_key}"
+        )
 
         print("\n" + "=" * 60)
         print("Slack template for #cds-ops-24x7-int:")
         print("=" * 60)
         print(f"Hello @dataops,")
-        print(f"Please have a look at {dssd_key}")
+        print(intro)
         print(f"({dssd_url})")
         print(f"{incident_title}")
         print(f"> {error_summary}")
@@ -312,6 +432,7 @@ class EscalateTool:
         incident_id: str,
         dssd_key: str,
         drgn_key: Optional[str] = None,
+        no_auto_dssd: bool = False,
     ) -> None:
         """
         Execute the full escalation workflow.
@@ -320,18 +441,25 @@ class EscalateTool:
             incident_id: PagerDuty incident ID
             dssd_key: DSSD ticket key (e.g. "DSSD-29386")
             drgn_key: DRGN ticket key (optional, auto-detected from PD notes)
+            no_auto_dssd: If True, clear the "CDS Opt role" field on the DRGN
+                before transitioning to Escalated, so the Jira automation
+                rule does NOT create a fresh DSSD. Use this when the DSSD
+                was created elsewhere (existing chronic issue ticket).
         """
         mode_label = "[DRY-RUN] " if self.dry_run else ""
-        print(f"\n{mode_label}PD Escalation Tool v{VERSION}")
+        suffix = " (no-auto-dssd)" if no_auto_dssd else ""
+        print(f"\n{mode_label}PD Escalation Tool v{VERSION}{suffix}")
         print("=" * 50)
 
+        total_steps = 9 if no_auto_dssd else 8
+
         # Step 1: Resolve PD user email
-        print("\n[1/8] Resolving PD user...")
+        print(f"\n[1/{total_steps}] Resolving PD user...")
         self.get_current_user()
         print(f"  User: {self.user_email}")
 
         # Step 2: Fetch PD incident
-        print(f"\n[2/8] Fetching PD incident {incident_id}...")
+        print(f"\n[2/{total_steps}] Fetching PD incident {incident_id}...")
         incident_info = self.fetch_incident(incident_id)
         print(f"  Title: {incident_info['title']}")
         print(f"  Status: {incident_info['status']} | Priority: {incident_info['priority']}")
@@ -339,7 +467,7 @@ class EscalateTool:
 
         # Step 3: Auto-detect DRGN if not provided
         if not drgn_key:
-            print(f"\n[3/8] Auto-detecting DRGN...")
+            print(f"\n[3/{total_steps}] Auto-detecting DRGN...")
             # Primary: check external_references (Jira integration field)
             drgn_key = incident_info.get('drgn_key')
             if drgn_key:
@@ -358,31 +486,44 @@ class EscalateTool:
                         f"Then re-run this tool."
                     )
         else:
-            print(f"\n[3/8] Using provided DRGN: {drgn_key}")
+            print(f"\n[3/{total_steps}] Using provided DRGN: {drgn_key}")
 
         # Step 4: Fetch DSSD status/assignee
-        print(f"\n[4/8] Fetching DSSD issue {dssd_key}...")
+        print(f"\n[4/{total_steps}] Fetching DSSD issue {dssd_key}...")
         dssd_info = self.fetch_jira_issue(dssd_key)
         print(f"  Status: {dssd_info['status']} | Assignee: {dssd_info['assignee']}")
         print(f"  Summary: {dssd_info['summary']}")
 
         # Step 5: Link DRGN "is blocked by" DSSD
-        print(f"\n[5/8] Linking {drgn_key} → {dssd_key}...")
+        print(f"\n[5/{total_steps}] Linking {drgn_key} → {dssd_key}...")
         self.link_jira_issues(drgn_key, dssd_key)
 
-        # Step 6: Transition DRGN → Escalated
-        print(f"\n[6/8] Transitioning {drgn_key} to Escalated...")
+        # Step 6 (optional): Suppress auto-DSSD by clearing CDS Opt role
+        next_step = 6
+        if no_auto_dssd:
+            print(
+                f"\n[{next_step}/{total_steps}] Clearing '{CDS_OPT_ROLE_FIELD_NAME}' on "
+                f"{drgn_key} to suppress auto-DSSD..."
+            )
+            self.clear_cds_opt_role(drgn_key)
+            next_step += 1
+
+        # Step 6 or 7: Transition DRGN → Escalated
+        print(f"\n[{next_step}/{total_steps}] Transitioning {drgn_key} to Escalated...")
         self.transition_to_escalated(drgn_key)
+        next_step += 1
 
-        # Step 7: Add PD note
-        print(f"\n[7/8] Adding PD note...")
-        self.add_pd_note(incident_id, drgn_key, dssd_key, dssd_info)
+        # Step 7 or 8: Add PD note
+        print(f"\n[{next_step}/{total_steps}] Adding PD note...")
+        self.add_pd_note(incident_id, drgn_key, dssd_key, dssd_info, no_auto_dssd)
+        next_step += 1
 
-        # Step 8: Print Slack template
-        print(f"\n[8/8] Slack template:")
-        # Use incident title as-is; for error summary, extract a short form
+        # Step 8 or 9: Print Slack template
+        print(f"\n[{next_step}/{total_steps}] Slack template:")
         error_summary = incident_info['title']
-        self.print_slack_template(dssd_key, incident_info['title'], error_summary)
+        self.print_slack_template(
+            dssd_key, incident_info['title'], error_summary, no_auto_dssd,
+        )
 
         print(f"\n{'[DRY-RUN] ' if self.dry_run else ''}Escalation complete.")
 
@@ -401,6 +542,8 @@ def main() -> None:
             "  %(prog)s --pd Q33L5GALLQ3ESB --dssd DSSD-29386\n"
             "  %(prog)s --pd https://yourcompany.pagerduty.com/incidents/Q33L5GALLQ3ESB --dssd DSSD-29386 --dry-run\n"
             "  %(prog)s --pd Q33L5GALLQ3ESB --dssd DSSD-29386 --drgn DRGN-15087\n"
+            "  %(prog)s --pd Q33L5GALLQ3ESB --dssd DSSD-31131 --no-auto-dssd\n"
+            "      (link DRGN to existing chronic-issue DSSD; suppress auto-DSSD creation)\n"
         ),
     )
     parser.add_argument(
@@ -417,6 +560,16 @@ def main() -> None:
         '--drgn',
         default=None,
         help='DRGN ticket key (optional, auto-detected from PD Jira integration field)',
+    )
+    parser.add_argument(
+        '--no-auto-dssd',
+        action='store_true',
+        help=(
+            'Clear "CDS Opt role" on the DRGN before transitioning to Escalated, '
+            'so the Jira automation rule does NOT create a fresh DSSD. Use when the '
+            '--dssd argument points at a pre-existing ticket (e.g. chronic issue) '
+            'and a duplicate DSSD would be noise.'
+        ),
     )
     parser.add_argument(
         '--dry-run', '-n',
@@ -456,6 +609,7 @@ def main() -> None:
             incident_id=incident_id,
             dssd_key=dssd_key,
             drgn_key=drgn_key,
+            no_auto_dssd=args.no_auto_dssd,
         )
     except RuntimeError as error:
         print(f"\nError: {error}", file=sys.stderr)
