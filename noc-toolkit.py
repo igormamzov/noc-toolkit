@@ -341,13 +341,6 @@ class NOCToolkit:
                 enabled=True
             ),
             ToolDefinition(
-                tool_id="shift-report",
-                name="Shift Report",
-                description="Sync Jira statuses into shift report (Google Sheets / Excel)",
-                script_path="tools/shift-report/shift_report.py",
-                enabled=True
-            ),
-            ToolDefinition(
                 tool_id="pd-escalate",
                 name="PD Escalate",
                 description="Link DRGN→DSSD, transition to Escalated, post PD note",
@@ -679,67 +672,6 @@ class NOCToolkit:
 
         return 0
 
-    def _run_shift_report_menu(self, tool: ToolDefinition) -> int:
-        """Show Shift Report sub-menu: Online (Google Sheets) or Local (Excel).
-
-        Returns exit code from the selected mode.
-        """
-        gsheet_configured = bool(
-            os.environ.get("GSHEET_WEBAPP_URL", "").strip()
-            and os.environ.get("GSHEET_API_KEY", "").strip()
-        )
-
-        print(f"\n{'=' * 56}")
-        print("Shift Report")
-        print(f"{'=' * 56}")
-
-        if gsheet_configured:
-            print("  1. Online mode  (Google Sheets)  [recommended]")
-            print("  2. Local mode   (Excel file)")
-            print("  0. Back to main menu")
-            print(f"{'=' * 56}")
-
-            try:
-                choice = input("\nSelect option [0-2]: ").strip()
-            except (KeyboardInterrupt, EOFError):
-                return 0
-
-            if choice == '1':
-                gsheet_tool = ToolDefinition(
-                    tool_id="shift-report-gsheet",
-                    name="Shift Report (Google Sheets)",
-                    description="",
-                    script_path="tools/shift-report/gsheet_report.py",
-                )
-                return self.run_tool(gsheet_tool)
-            elif choice == '2':
-                return self.run_tool(tool)
-            else:
-                return 0
-        else:
-            print()
-            print("  Google Sheets mode is not configured.")
-            print()
-            print("  To enable it, add these variables to your .env file:")
-            print("    GSHEET_WEBAPP_URL=<web app URL>")
-            print("    GSHEET_API_KEY=<api key>")
-            print()
-            print("  Request these values from the toolkit maintainer.")
-            print()
-            print("  1. Local mode   (Excel file)")
-            print("  0. Back to main menu")
-            print(f"{'=' * 56}")
-
-            try:
-                choice = input("\nSelect option [0-1]: ").strip()
-            except (KeyboardInterrupt, EOFError):
-                return 0
-
-            if choice == '1':
-                return self.run_tool(tool)
-            else:
-                return 0
-
     def _view_monitor_output(self) -> int:
         """Display buffered pd-monitor output."""
         print(f"\n{'=' * 56}")
@@ -789,16 +721,11 @@ class NOCToolkit:
             print(f"❌ Invalid choice. Please enter a number between 0 and {len(more_tools)}.")
 
     def _run_selected_tool(self, selected_tool: ToolDefinition) -> None:
-        """Common path for running a chosen tool, with pd-monitor / shift-report routing."""
+        """Common path for running a chosen tool, with pd-monitor sub-menu routing."""
         # Route pd-monitor through the background-capable sub-menu
         if selected_tool.tool_id == "pd-monitor":
             self._run_pd_monitor_menu(selected_tool)
             return  # Sub-menu handles its own prompts
-
-        # Route shift-report through Online/Local sub-menu
-        if selected_tool.tool_id == "shift-report":
-            self._run_shift_report_menu(selected_tool)
-            return
 
         # Run the tool
         exit_code = self.run_tool(selected_tool)

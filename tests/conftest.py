@@ -366,32 +366,3 @@ def report_dec31(tmp_path):
     return file_path
 
 
-# ---------------------------------------------------------------------------
-# Jira mock fixture
-# ---------------------------------------------------------------------------
-
-@pytest.fixture
-def mock_jira(monkeypatch):
-    """Mock _jira_get to return controlled responses without network calls."""
-    from shift_report import ShiftReport
-
-    _responses = {}
-
-    def set_response(ticket_id: str, status: str, assignee: str, summary: str = ""):
-        _responses[ticket_id] = {
-            "fields": {
-                "status": {"name": status},
-                "assignee": {"displayName": assignee} if assignee != "Unassigned" else None,
-                "summary": summary or f"Summary for {ticket_id}",
-            }
-        }
-
-    def mock_get(self, url: str):
-        for ticket_id, response in _responses.items():
-            if ticket_id in url:
-                return response
-        return None
-
-    monkeypatch.setattr(ShiftReport, "_jira_get", mock_get)
-
-    return set_response
