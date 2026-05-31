@@ -135,7 +135,12 @@ def _append_debug(message: str) -> None:
 
 
 class ToolDefinition:
-    """Represents a tool available in the toolkit."""
+    """Represents a tool available in the toolkit.
+
+    `category` can be:
+      - "main" — shown in the top-level menu (default)
+      - "more" — shown only when the user opens the "More tools…" submenu
+    """
 
     def __init__(
         self,
@@ -143,13 +148,15 @@ class ToolDefinition:
         name: str,
         description: str,
         script_path: str,
-        enabled: bool = True
+        enabled: bool = True,
+        category: str = "main",
     ):
         self.tool_id = tool_id
         self.name = name
         self.description = description
         self.script_path = Path(script_path)
         self.enabled = enabled
+        self.category = category
 
     def get_full_path(self) -> Path:
         """Get the full absolute path to the tool script."""
@@ -308,7 +315,7 @@ class NOCToolkit:
                 name="PD Jobs",
                 description="Extract job names from merged PagerDuty incidents",
                 script_path="tools/pd-jobs/pd_jobs.py",
-                enabled=True
+                enabled=True,
             ),
             ToolDefinition(
                 tool_id="pd-monitor",
@@ -390,8 +397,16 @@ class NOCToolkit:
         ]
 
     def get_enabled_tools(self) -> List[ToolDefinition]:
-        """Get list of enabled tools."""
+        """Get list of enabled tools (any category)."""
         return [tool for tool in self.tools if tool.enabled]
+
+    def get_main_tools(self) -> List[ToolDefinition]:
+        """Tools shown in the top-level menu."""
+        return [t for t in self.tools if t.enabled and t.category == "main"]
+
+    def get_more_tools(self) -> List[ToolDefinition]:
+        """Tools shown in the 'More tools…' submenu."""
+        return [t for t in self.tools if t.enabled and t.category == "more"]
 
     def display_banner(self) -> None:
         """Display the toolkit banner."""
@@ -421,20 +436,19 @@ class NOCToolkit:
         print()
 
     def display_menu(self) -> None:
-        """Display the main menu."""
+        """Display the main menu (main-category tools + 'More tools' link)."""
         print("\n" + "=" * 56)
         print("Available Tools:")
         print("=" * 56)
 
-        enabled_tools = self.get_enabled_tools()
+        main_tools = self.get_main_tools()
 
-        if not enabled_tools:
+        if not main_tools and not self.get_more_tools():
             print("  No tools available.")
             return
 
-        for idx, tool in enumerate(enabled_tools, start=1):
+        for idx, tool in enumerate(main_tools, start=1):
             status_icon = "✓" if tool.exists() else "✗"
-            # Annotate pd-monitor entry when running in background
             running_tag = ""
             if tool.tool_id == "pd-monitor" and self._monitor_bg.is_running:
                 new = self._monitor_bg.new_lines
@@ -445,8 +459,34 @@ class NOCToolkit:
                 print(f"      ⚠️  Warning: Script not found at {tool.get_full_path()}")
             print()
 
+        if self.get_more_tools():
+            print(f"  99. More tools…  ({len(self.get_more_tools())} less-used)")
+            print()
+
         print("-" * 56)
         print("  0. Exit")
+        print("=" * 56)
+
+    def display_more_menu(self) -> None:
+        """Display the 'More tools…' submenu."""
+        print("\n" + "=" * 56)
+        print("More Tools (less-used):")
+        print("=" * 56)
+
+        more_tools = self.get_more_tools()
+        if not more_tools:
+            print("  (no less-used tools)")
+        else:
+            for idx, tool in enumerate(more_tools, start=1):
+                status_icon = "✓" if tool.exists() else "✗"
+                print(f"  {idx}. [{status_icon}] {tool.name}")
+                print(f"      {tool.description}")
+                if not tool.exists():
+                    print(f"      ⚠️  Warning: Script not found at {tool.get_full_path()}")
+                print()
+
+        print("-" * 56)
+        print("  0. Back to main menu")
         print("=" * 56)
 
     def get_user_choice(self, max_choice: int) -> Optional[int]:
@@ -723,57 +763,103 @@ class NOCToolkit:
 
         return 0
 
+    def _select_more_tool(self) -> Optional[ToolDefinition]:
+        """Show the 'More tools…' submenu and return the selected tool, or None."""
+        while True:
+            self.display_more_menu()
+            more_tools = self.get_more_tools()
+            if not more_tools:
+                input("\nPress Enter to return to main menu...")
+                return None
+            try:
+                choice = input(f"\nSelect tool [0-{len(more_tools)}]: ").strip()
+                choice_num = int(choice)
+            except ValueError:
+                print("❌ Invalid input. Please enter a number.")
+                continue
+            except KeyboardInterrupt:
+                print("\n\n👋 Returning to main menu.")
+                return None
+            if choice_num == 0:
+                return None
+            if 1 <= choice_num <= len(more_tools):
+                return more_tools[choice_num - 1]
+            print(f"❌ Invalid choice. Please enter a number between 0 and {len(more_tools)}.")
+
+    def _run_selected_tool(self, selected_tool: ToolDefinition) -> None:
+        """Common path for running a chosen tool, with pd-monitor / shift-report routing."""
+        # Route pd-monitor through the background-capable sub-menu
+        if selected_tool.tool_id == "pd-monitor":
+            self._run_pd_monitor_menu(selected_tool)
+            return  # Sub-menu handles its own prompts
+
+        # Route shift-report through Online/Local sub-menu
+        if selected_tool.tool_id == "shift-report":
+            self._run_shift_report_menu(selected_tool)
+            return
+
+        # Run the tool
+        exit_code = self.run_tool(selected_tool)
+
+        # Show completion message
+        print(f"\n{'=' * 56}")
+        if exit_code == 0:
+            print(f"✅ {selected_tool.name} completed successfully.")
+        else:
+            print(f"⚠️  {selected_tool.name} exited with code {exit_code}.")
+        print(f"{'=' * 56}")
+
+        # Wait for user before returning to menu
+        input("\nPress Enter to return to main menu...")
+
     def run_interactive_menu(self) -> None:
         """Run the main interactive menu loop."""
         while True:
             self.display_banner()
             self.display_menu()
 
-            enabled_tools = self.get_enabled_tools()
-            max_choice = len(enabled_tools)
+            main_tools = self.get_main_tools()
+            more_tools = self.get_more_tools()
 
-            if max_choice == 0:
+            if not main_tools and not more_tools:
                 print("\n⚠️  No tools available. Exiting.")
                 break
 
-            choice = self.get_user_choice(max_choice)
+            # Build the choice prompt — we accept 1..N for main tools, 99 for the
+            # 'More tools…' submenu (if present), and 0 to exit.
+            max_main = len(main_tools)
+            choice_label = f"[0-{max_main}{', 99' if more_tools else ''}]"
 
-            if choice is None:
+            try:
+                raw = input(f"\nSelect tool {choice_label}: ").strip()
+                choice_num = int(raw)
+            except ValueError:
+                print("❌ Invalid input. Please enter a number.")
                 continue
+            except KeyboardInterrupt:
+                print("\n\n👋 Interrupted by user.")
+                choice_num = 0
 
-            if choice == 0:
+            if choice_num == 0:
                 if self._monitor_bg.is_running:
                     print("\n  Stopping background PD Monitor...")
                     self._monitor_bg.stop()
                 print("\n👋 Exiting NOC Toolkit. Goodbye!")
                 break
 
-            # Get the selected tool (adjust index since menu starts at 1)
-            selected_tool = enabled_tools[choice - 1]
-
-            # Route pd-monitor through the background-capable sub-menu
-            if selected_tool.tool_id == "pd-monitor":
-                self._run_pd_monitor_menu(selected_tool)
-                continue  # Sub-menu handles its own prompts
-
-            # Route shift-report through Online/Local sub-menu
-            if selected_tool.tool_id == "shift-report":
-                self._run_shift_report_menu(selected_tool)
+            if choice_num == 99 and more_tools:
+                more_choice = self._select_more_tool()
+                if more_choice is None:
+                    continue
+                self._run_selected_tool(more_choice)
                 continue
 
-            # Run the tool
-            exit_code = self.run_tool(selected_tool)
+            if 1 <= choice_num <= max_main:
+                self._run_selected_tool(main_tools[choice_num - 1])
+                continue
 
-            # Show completion message
-            print(f"\n{'=' * 56}")
-            if exit_code == 0:
-                print(f"✅ {selected_tool.name} completed successfully.")
-            else:
-                print(f"⚠️  {selected_tool.name} exited with code {exit_code}.")
-            print(f"{'=' * 56}")
-
-            # Wait for user before returning to menu
-            input("\nPress Enter to return to main menu...")
+            valid_range = f"between 0 and {max_main}" + (" (or 99 for more tools)" if more_tools else "")
+            print(f"❌ Invalid choice. Please enter a number {valid_range}.")
 
 
 def main() -> int:
