@@ -8,19 +8,38 @@ Usage:
     auto_close.py check <PD_URL_or_ID>          # single incident
                                                 # offers to add to whitelist
                                                 # if job_name not yet allowed
+    auto_close.py close <PD_URL_or_ID> [flags]  # close one with explicit flags
+                                                # bypasses whitelist if --force
 
-Closure conditions (all required):
+Closure conditions for `scan` and `check` (all required):
     1. job_name matches whitelist pattern
     2. CDT batch_dashboard shows last_runs[0].status == 'success'
     3. that success run started after the PD incident.created_at
 
-Resolution selection:
+Resolution selection (auto-detect):
     - 'repaired' in title or notes  → Resolved via Standard Procedure
     - otherwise                     → Resolved Automatically
 
 SLA Violation:
     - high_frequency_jobs match     → No (auto)
     - otherwise                     → prompt in interactive mode
+
+The `close` subcommand:
+    Closes a single PD/DRGN with explicit flags. Useful for scripting and for
+    chronic-issue closures where you want to bypass whitelist + add a DSSD
+    cross-reference. Examples:
+
+        # explicit Auto with DSSD reference appended to comment
+        auto_close.py close Q1NKRGE1Y1K5EL --auto --reference DSSD-31131
+
+        # explicit RvSP (manual repair was performed)
+        auto_close.py close Q0PC40933YQ7YT --rvsp --comment "Igor manual repair"
+
+        # False Positive (paused DAG / stale alert)
+        auto_close.py close DRGN-17896 --fp --comment "DAG paused"
+
+        # auto-detect resolution + append a custom note
+        auto_close.py close Q3EUAXVKFWS1QK --auto-detect --append "tracked in DSSD-31259"
 """
 
 from __future__ import annotations
@@ -60,7 +79,16 @@ from closure import (
     SLA_NO, SLA_YES, SLA_UNKNOWN,
     RUNBOOK_UP_TO_DATE, RUNBOOK_MISSING,
     RESOLUTION_AUTO, RESOLUTION_STD_PROC,
+    RESOLUTION_FALSE_POSITIVE, RESOLUTION_NOT_REQUIRED,
 )
+
+# Map of CLI resolution flag → (resolution_id, human_name)
+RESOLUTION_MAP = {
+    "auto": (RESOLUTION_AUTO, "Resolved Automatically"),
+    "rvsp": (RESOLUTION_STD_PROC, "Resolved via Standard Procedure"),
+    "fp": (RESOLUTION_FALSE_POSITIVE, "False Positive"),
+    "not-required": (RESOLUTION_NOT_REQUIRED, "Not Required"),
+}
 
 WHITELIST_PATH = _SCRIPT_DIR / "whitelist.json"
 
@@ -281,6 +309,181 @@ def cmd_scan(args, client) -> int:
     return 0
 
 
+def build_comment(
+    *,
+    base: Optional[str] = None,
+    summary: Optional[IncidentSummary] = None,
+    references: Optional[List[str]] = None,
+    append: Optional[str] = None,
+    cdt_run_info: Optional[str] = None,
+) -> str:
+    """Compose a closure comment from optional parts.
+
+    base: the main one-liner (default depends on context)
+    summary: PD summary so we can mention "Igor performed manual repair" etc.
+    references: list of DSSD/COREDATA/FCR keys to cross-reference
+    append: free-form text appended at the end
+    cdt_run_info: e.g. "Next scheduled run at 05:47 UTC completed successfully (5.5m, success)"
+    """
+    parts: List[str] = []
+    if base:
+        parts.append(base)
+    elif summary and summary.is_repaired:
+        parts.append("Manual repair was performed by NOC; subsequent run completed successfully.")
+    elif summary:
+        parts.append("Job recovered without manual intervention; next run completed successfully.")
+    else:
+        parts.append("Closing per NOC standard procedure.")
+
+    if cdt_run_info:
+        parts.append(cdt_run_info)
+
+    if references:
+        refs = ", ".join(references)
+        parts.append(f"Cross-reference: tracked under {refs}. No additional escalation needed.")
+
+    if append:
+        parts.append(append)
+
+    return "\n\n".join(parts)
+
+
+def resolve_drgn_key(arg: str) -> Optional[str]:
+    """Accept `DRGN-NNNN`, full Jira URL, or PD ID/URL.
+
+    For PD inputs: looks up the linked DRGN via PD notes.
+    Returns the DRGN key, or None if it can't be determined.
+    """
+    arg = arg.strip()
+    # Direct DRGN-NNNN
+    m = re.search(r"\b(DRGN-\d+)\b", arg)
+    if m:
+        return m.group(1)
+    # Try as PD ID/URL
+    pd_id = parse_pd_id(arg)
+    if pd_id:
+        try:
+            summary = summarize_incident(pd_id)
+            return summary.drgn_key
+        except Exception:
+            return None
+    return None
+
+
+def cmd_close(args, client) -> int:
+    """Close a single DRGN with explicit flags.
+
+    Accepts a PD ID/URL OR a DRGN key. With a PD ID, looks up the DRGN from PD
+    notes and pulls IncidentSummary for auto-detection of resolution / SLA /
+    runbook. With a bare DRGN, only closes (no auto-detection — flags must
+    specify resolution).
+    """
+    target = args.target.strip()
+
+    # Determine input type
+    pd_id = parse_pd_id(target)
+    drgn_key = None
+    summary: Optional[IncidentSummary] = None
+
+    if pd_id:
+        try:
+            summary = summarize_incident(pd_id)
+        except Exception as e:
+            print(f"Failed to fetch PD#{pd_id}: {e}", file=sys.stderr)
+            return 1
+        drgn_key = summary.drgn_key
+        if not drgn_key:
+            print(f"PD#{summary.pd_number} has no DRGN reference in notes — cannot close", file=sys.stderr)
+            return 1
+        print(f"PD#{summary.pd_number} [{summary.status}] → {drgn_key}")
+        print(f"  title: {summary.title[:80]}")
+        print(f"  job_name: {summary.job_name or '(none)'}")
+        if summary.dssd_key:
+            print(f"  dssd_key: {summary.dssd_key} (already escalated)")
+    else:
+        m = re.search(r"\b(DRGN-\d+)\b", target)
+        if m:
+            drgn_key = m.group(1)
+            print(f"Direct DRGN target: {drgn_key} (no PD lookup; flags must drive closure)")
+        else:
+            print(f"Could not parse target (need PD ID/URL or DRGN-NNNN): {target}", file=sys.stderr)
+            return 1
+
+    # Determine resolution
+    explicit_flags = [k for k in ("auto", "rvsp", "fp", "not_required") if getattr(args, k, False)]
+    if len(explicit_flags) > 1:
+        print(f"Conflicting resolution flags: {explicit_flags}", file=sys.stderr)
+        return 1
+    if explicit_flags:
+        flag = explicit_flags[0].replace("_", "-")
+        resolution_id, resolution_name = RESOLUTION_MAP[flag]
+    elif args.auto_detect:
+        if not summary:
+            print("--auto-detect requires PD input (so we can read title/notes)", file=sys.stderr)
+            return 1
+        resolution_id = pick_resolution(summary)
+        resolution_name = "Resolved via Standard Procedure" if resolution_id == RESOLUTION_STD_PROC else "Resolved Automatically"
+        print(f"  auto-detected resolution: {resolution_name}")
+    else:
+        print("Must specify one of: --auto, --rvsp, --fp, --not-required, or --auto-detect", file=sys.stderr)
+        return 1
+
+    # Determine SLA Violation
+    sla_map = {"no": SLA_NO, "yes": SLA_YES, "unknown": SLA_UNKNOWN}
+    sla = sla_map.get(args.sla, SLA_NO)
+
+    # Determine Runbook Status + URL
+    if args.runbook_url:
+        runbook_link = args.runbook_url
+        runbook_status = RUNBOOK_UP_TO_DATE
+    elif summary and summary.runbook:
+        runbook_link = summary.runbook
+        runbook_status = RUNBOOK_UP_TO_DATE
+    else:
+        runbook_link = None
+        runbook_status = RUNBOOK_MISSING
+
+    # Build comment
+    references = list(args.reference or [])
+    comment = build_comment(
+        base=args.comment,
+        summary=summary,
+        references=references,
+        append=args.append,
+    )
+
+    print(f"  resolution: {resolution_name}")
+    print(f"  sla: {args.sla} | runbook_status: {'Up-to-date' if runbook_status == RUNBOOK_UP_TO_DATE else 'Missing'}")
+    if references:
+        print(f"  references: {', '.join(references)}")
+    print(f"  comment ({len(comment)} chars): {comment[:200]}{'...' if len(comment) > 200 else ''}")
+
+    if args.dry_run:
+        print(f"\n(dry-run, no changes — would close {drgn_key} as {resolution_name})")
+        return 0
+
+    if not args.yes:
+        ans = input(f"\nClose {drgn_key} as {resolution_name}? [y/N]: ").strip().lower()
+        if ans != "y":
+            print("Cancelled.")
+            return 0
+
+    code = close_drgn(
+        drgn_key,
+        sla_violation=sla,
+        runbook_status=runbook_status,
+        runbook_link=runbook_link,
+        resolution=resolution_id,
+        comment=comment,
+    )
+    print(f"\n✓ closed {drgn_key} (HTTP {code}, {resolution_name})")
+
+    # Verify
+    st = get_drgn_status(drgn_key)
+    print(f"  verify: status={st['status']['name']}, resolution={(st.get('resolution') or {}).get('name')}")
+    return 0
+
+
 def cmd_check(args, client) -> int:
     wl = load_whitelist()
     pd_id = parse_pd_id(args.incident)
@@ -351,10 +554,11 @@ def _interactive_menu() -> List[str]:
     print("  3. Scan acknowledged PD incidents (auto, no prompts)")
     print("  4. Check a single PD incident by URL or ID")
     print("  5. Check a single PD incident (dry-run)")
+    print("  6. Close one DRGN/PD with explicit flags")
     print("  0. Back")
     print("=" * 56)
     while True:
-        choice = input("Select [0-5]: ").strip()
+        choice = input("Select [0-6]: ").strip()
         if choice == "0":
             return []
         if choice == "1":
@@ -372,6 +576,37 @@ def _interactive_menu() -> List[str]:
             if choice == "5":
                 args.append("--dry-run")
             return args
+        if choice == "6":
+            target = input("PD URL/ID or DRGN-NNNN: ").strip()
+            if not target:
+                print("  cancelled")
+                return []
+            print("  Resolution? [a]uto / [r]vsp (manual repair) / [f]p / [n]ot-required / [d]etect: ", end="")
+            res_choice = input().strip().lower() or "d"
+            res_flag_map = {
+                "a": "--auto",
+                "auto": "--auto",
+                "r": "--rvsp",
+                "rvsp": "--rvsp",
+                "f": "--fp",
+                "fp": "--fp",
+                "n": "--not-required",
+                "d": "--auto-detect",
+                "detect": "--auto-detect",
+                "": "--auto-detect",
+            }
+            res_flag = res_flag_map.get(res_choice)
+            if not res_flag:
+                print("  invalid choice")
+                continue
+            ref = input("  Cross-reference key (e.g. DSSD-31131, blank to skip): ").strip()
+            extra: List[str] = []
+            if ref:
+                extra += ["--reference", ref]
+            note = input("  Append note (blank to skip): ").strip()
+            if note:
+                extra += ["--append", note]
+            return ["close", target, res_flag] + extra
         print("  invalid choice")
 
 
@@ -395,6 +630,45 @@ def main(argv=None) -> int:
                               help="Check single PD incident (URL or ID)")
     p_check.add_argument("incident")
 
+    # `close` — explicit single-ticket closure with flags
+    p_close = sub.add_parser(
+        "close",
+        help="Close one DRGN/PD with explicit flags (bypasses whitelist)",
+        description=(
+            "Close a single DRGN ticket with explicit flags. Target can be:\n"
+            "  - a PagerDuty incident ID or URL (DRGN is looked up from PD notes)\n"
+            "  - a bare DRGN-NNNN key\n\n"
+            "One of the resolution flags must be given:\n"
+            "  --auto / --rvsp / --fp / --not-required / --auto-detect"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_close.add_argument("target", help="PD ID/URL or DRGN-NNNN")
+    res_group = p_close.add_mutually_exclusive_group()
+    res_group.add_argument("--auto", action="store_true",
+                            help="Resolved Automatically (no manual intervention)")
+    res_group.add_argument("--rvsp", action="store_true",
+                            help="Resolved via Standard Procedure (manual repair was performed)")
+    res_group.add_argument("--fp", action="store_true",
+                            help="False Positive")
+    res_group.add_argument("--not-required", dest="not_required", action="store_true",
+                            help="Not Required")
+    res_group.add_argument("--auto-detect", action="store_true",
+                            help="Pick resolution from PD title/notes (Auto vs RvSP)")
+    p_close.add_argument("--reference", action="append", metavar="KEY",
+                          help="Cross-reference key to mention in comment (e.g. DSSD-31131). "
+                               "Repeatable.")
+    p_close.add_argument("--comment", help="Custom base comment (overrides default)")
+    p_close.add_argument("--append", help="Free-form text appended at the end of the comment")
+    p_close.add_argument("--sla", choices=["no", "yes", "unknown"], default="no",
+                          help="SLA Violation field (default: no)")
+    p_close.add_argument("--runbook-url",
+                          help="Runbook URL to set (Runbook Status becomes Up-to-date)")
+    p_close.add_argument("--dry-run", action="store_true",
+                          help="Show plan but do not close")
+    p_close.add_argument("--yes", action="store_true",
+                          help="Skip confirmation prompt")
+
     # Default to argv from sys.argv (or explicit caller argv).
     # When invoked via noc-toolkit launcher, sys.argv == [script_path] only,
     # so no subcommand is given — fall back to interactive menu.
@@ -415,6 +689,8 @@ def main(argv=None) -> int:
         return cmd_scan(args, client)
     if args.cmd == "check":
         return cmd_check(args, client)
+    if args.cmd == "close":
+        return cmd_close(args, client)
     return 1
 
 

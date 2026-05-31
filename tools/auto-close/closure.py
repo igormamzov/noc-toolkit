@@ -27,6 +27,8 @@ RUNBOOK_MISSING = "64532"
 
 RESOLUTION_AUTO = "12901"          # Resolved Automatically
 RESOLUTION_STD_PROC = "12903"      # Resolved via Standard Procedure
+RESOLUTION_FALSE_POSITIVE = "11502"  # False Positive
+RESOLUTION_NOT_REQUIRED = "14"     # Not Required
 
 _CTX = ssl.create_default_context()
 _CTX.check_hostname = False
