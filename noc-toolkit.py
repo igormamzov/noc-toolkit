@@ -391,6 +391,14 @@ class NOCToolkit:
                 script_path="tools/scheduled-recheck/scheduled_recheck.py",
                 enabled=True
             ),
+            ToolDefinition(
+                tool_id="ccpa-audit",
+                name="CCPA Audit",
+                description="Render CCPA ERASE progress block; optional PD note posting",
+                script_path="tools/ccpa-audit/ccpa_audit.py",
+                enabled=True,
+                category="more",
+            ),
         ]
 
     def get_enabled_tools(self) -> List[ToolDefinition]:
