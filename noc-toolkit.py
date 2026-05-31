@@ -399,6 +399,13 @@ class NOCToolkit:
                 enabled=True,
                 category="more",
             ),
+            ToolDefinition(
+                tool_id="pd-create-drgn",
+                name="PD Create DRGN",
+                description="Simulate PD's 'Create Jira Issue' button — make DRGN for a PD incident",
+                script_path="tools/pd-create-drgn/pd_create_drgn.py",
+                enabled=True,
+            ),
         ]
 
     def get_enabled_tools(self) -> List[ToolDefinition]:
