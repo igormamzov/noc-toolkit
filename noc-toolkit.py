@@ -338,14 +338,16 @@ class NOCToolkit:
                 name="Freshness",
                 description="DACSCAN data freshness report with granular table checks",
                 script_path="tools/freshness/freshness.py",
-                enabled=True
+                enabled=True,
+                category="more",
             ),
             ToolDefinition(
                 tool_id="pd-escalate",
                 name="PD Escalate",
                 description="Link DRGN→DSSD, transition to Escalated, post PD note",
                 script_path="tools/pd-escalate/pd_escalate.py",
-                enabled=True
+                enabled=True,
+                category="more",
             ),
             ToolDefinition(
                 tool_id="pd-resolve",
