@@ -96,6 +96,10 @@ CONSEQUENTIAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Job-name pattern for `jobs` subcommand (extracts jb_* names from
+# incident alerts/notes — see _cmd_jobs())
+JOB_NAME_RE = re.compile(r'\b(jb_[a-zA-Z0-9_]+)\b')
+
 # RDS Export "failed to start" consolidation (Scenario D)
 # Matches both "RDS export" and "RDS exports" (used interchangeably in titles)
 RDS_EXPORT_RE = re.compile(r'^RDS\s+exports?\b', re.IGNORECASE)
@@ -1459,6 +1463,75 @@ class PagerDutyMergeTool:
 
 
 # ---------------------------------------------------------------------------
+# `jobs` subcommand — extract jb_* names from a PD incident
+# ---------------------------------------------------------------------------
+
+def _extract_incident_id_from_input(incident_input: str) -> str:
+    """Accept either a raw PD incident ID or a full incident URL."""
+    if 'incidents/' in incident_input:
+        return incident_input.split('incidents/')[-1].strip('/')
+    return incident_input.strip()
+
+
+def _extract_jobs_from_value(value: Any, jobs_found: Set[str]) -> None:
+    """Recursively walk dicts/lists/strings, collecting jb_* names into jobs_found."""
+    if isinstance(value, str):
+        for match in JOB_NAME_RE.findall(value):
+            jobs_found.add(match)
+    elif isinstance(value, dict):
+        for nested_key, nested_value in value.items():
+            _extract_jobs_from_value(str(nested_key), jobs_found)
+            _extract_jobs_from_value(nested_value, jobs_found)
+    elif isinstance(value, list):
+        for item in value:
+            _extract_jobs_from_value(item, jobs_found)
+    elif isinstance(value, (int, float)):
+        for match in JOB_NAME_RE.findall(str(value)):
+            jobs_found.add(match)
+
+
+def _cmd_jobs(pagerduty_api_token: str, incident_input: str) -> int:
+    """
+    Extract jb_* job names from a PagerDuty incident's payload, alerts and notes.
+
+    Replicates the standalone `pd-jobs` tool — kept inside pd-merge so users only
+    need one entry point for "I have a merged PD; tell me everything about the
+    jobs inside it."
+
+    Returns shell exit code: 0 if jobs found and printed, 1 if none.
+    """
+    incident_id = _extract_incident_id_from_input(incident_input)
+    pagerduty_client = new_pd_client(pagerduty_api_token)
+    jobs_found: Set[str] = set()
+
+    try:
+        incident_response = pagerduty_client.rget(f'incidents/{incident_id}')
+        incident_data = (
+            incident_response.get('incident', incident_response)
+            if isinstance(incident_response, dict)
+            else incident_response
+        )
+        _extract_jobs_from_value(incident_data, jobs_found)
+
+        for alert in pagerduty_client.list_all(f'incidents/{incident_id}/alerts'):
+            _extract_jobs_from_value(alert, jobs_found)
+
+        for note in pagerduty_client.list_all(f'incidents/{incident_id}/notes'):
+            _extract_jobs_from_value(note.get('content', ''), jobs_found)
+    except pagerduty.Error as error:
+        print(f"Error: Failed to fetch incident data: {error}", file=sys.stderr)
+        return 1
+
+    if not jobs_found:
+        print("No jobs matching jb_* pattern were found", file=sys.stderr)
+        return 1
+
+    for job_name in sorted(jobs_found):
+        print(job_name)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -1469,6 +1542,21 @@ def main() -> None:
     env = require_env('PAGERDUTY_API_TOKEN')
     jira_server_url = os.environ.get('JIRA_SERVER_URL')
     jira_personal_access_token = os.environ.get('JIRA_PERSONAL_ACCESS_TOKEN')
+
+    # Subcommand dispatch — only `jobs` for now (folded in from the
+    # deprecated standalone pd-jobs tool, 2026-05-31).
+    if len(sys.argv) >= 2 and sys.argv[1] == 'jobs':
+        if len(sys.argv) < 3 or sys.argv[2] in ('--help', '-h'):
+            print("Usage: python pd_merge.py jobs <INCIDENT_URL_OR_ID>")
+            print()
+            print("Extracts jb_* job names from a PagerDuty incident's alerts and notes.")
+            print("Useful for inspecting merged PD incidents — shows every failed job rolled up.")
+            print()
+            print("Examples:")
+            print("  python pd_merge.py jobs Q1WPEMZKLQZGJF")
+            print("  python pd_merge.py jobs https://yourcompany.pagerduty.com/incidents/Q1WPEMZKLQZGJF")
+            sys.exit(0 if (len(sys.argv) >= 3 and sys.argv[2] in ('--help', '-h')) else 1)
+        sys.exit(_cmd_jobs(env['PAGERDUTY_API_TOKEN'], sys.argv[2]))
 
     # Parse CLI arguments
     dry_run = False
@@ -1502,7 +1590,9 @@ def main() -> None:
             print("PagerDuty Incident Merge Tool")
             print(f"Version: {VERSION}")
             print()
-            print("Usage: python pd_merge.py [OPTIONS]")
+            print("Usage:")
+            print("  python pd_merge.py [OPTIONS]                 — interactive merge workflow")
+            print("  python pd_merge.py jobs <INCIDENT_URL_OR_ID> — list jb_* jobs in an incident")
             print()
             print("Options:")
             print("  --dry-run, -n    Simulate merges without making API changes")

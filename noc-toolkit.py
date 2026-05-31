@@ -315,7 +315,9 @@ class NOCToolkit:
                 name="PD Jobs",
                 description="Extract job names from merged PagerDuty incidents",
                 script_path="tools/pd-jobs/pd_jobs.py",
-                enabled=True,
+                # Folded into pd-merge as `jobs` subcommand on 2026-05-31.
+                # Standalone kept for one release as a safety net; will be removed later.
+                enabled=False,
             ),
             ToolDefinition(
                 tool_id="pd-monitor",
