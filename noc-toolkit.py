@@ -380,6 +380,13 @@ class NOCToolkit:
                 script_path="tools/auto-close/auto_close.py",
                 enabled=True
             ),
+            ToolDefinition(
+                tool_id="scheduled-recheck",
+                name="Scheduled Recheck",
+                description="Wait N minutes, check CDT, auto-close DRGN if next run succeeded",
+                script_path="tools/scheduled-recheck/scheduled_recheck.py",
+                enabled=True
+            ),
         ]
 
     def get_enabled_tools(self) -> List[ToolDefinition]:
