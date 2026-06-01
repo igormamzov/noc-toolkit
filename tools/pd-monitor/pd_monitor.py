@@ -62,6 +62,45 @@ SILENT_ACK_PATTERNS = [
 # like "DSSD-12345" anywhere in the title.
 _DSSD_KEY_RE = re.compile(r"\bDSSD-\d+\b", re.IGNORECASE)
 
+# Job/DAG-signature extractors — used to detect "we already have another
+# active incident for the same underlying job/DAG, skip duplicate DRGN".
+# Mirrors pd-merge's title-parsing logic, plus an extra rule for the
+# Airflow-email format ("Airflow alert: <TaskInstance: <DAG>.<TASK> ...>")
+# that pd-merge doesn't currently parse.
+#
+# Order matters: more specific patterns first so we don't accidentally
+# match a substring inside a more verbose title.
+_JOB_SIGNATURE_PATTERNS: List[Tuple[str, re.Pattern]] = [
+    ("databricks-job", re.compile(r"databricks\s+batch\s+job\s+(\S+?)\s+failed", re.I)),
+    ("airflow-consec", re.compile(r"airflow\s+dag\s+(\S+?)\s+has\s+failed\s+consecutively", re.I)),
+    ("airflow-time",   re.compile(r"airflow\s+dag\s+(\S+?)\s+exceeded\s+expected\s+run\s+time", re.I)),
+    ("monitor",        re.compile(r"monitor\s+job\s+'?(\S+?)'?\s+failed", re.I)),
+    ("airflow-task",   re.compile(r"airflow\s+alert:\s*<TaskInstance:\s*(\S+?)\.", re.I)),
+]
+_MONITOR_SUFFIX_RE = re.compile(r"(?:_airflow_prod|_run_prod|_prod)$", re.IGNORECASE)
+
+
+def extract_job_signature(title: str) -> Optional[str]:
+    """
+    Pull the job/DAG name out of a PD incident title for cross-incident
+    matching. Returns None if no known pattern matches.
+
+    For Monitor-job titles, also strips the well-known `_airflow_prod` /
+    `_run_prod` / `_prod` suffix so that "Monitor job foo_prod failed" and
+    "Databricks batch job foo failed" hash to the same key.
+    """
+    if not title:
+        return None
+    for kind, pattern in _JOB_SIGNATURE_PATTERNS:
+        match = pattern.search(title)
+        if not match:
+            continue
+        raw_name = match.group(1).strip()
+        if kind == "monitor":
+            raw_name = _MONITOR_SUFFIX_RE.sub("", raw_name)
+        return raw_name or None
+    return None
+
 DRGN_SKIP_RULES: List[Tuple[str, Callable[[str], bool]]] = [
     # 1. NOC explicitly tagged the incident as "ignore" — usually means
     #    the alert is known noise / disabled / manually handled.
@@ -242,7 +281,11 @@ class PagerDutyMonitor:
     @staticmethod
     def _should_skip_drgn(title: str) -> Tuple[bool, Optional[str]]:
         """
-        Decide whether auto-create DRGN must be skipped for this incident.
+        Decide whether auto-create DRGN must be skipped for this incident
+        based on title-only rules (cheap, no API calls).
+
+        Cross-incident dedup ('related-incident-exists') is checked
+        separately by _has_related_active_incident — see _try_auto_create_drgn.
 
         Returns:
             (True, reason_label) — skip; reason_label is one of the labels
@@ -254,6 +297,44 @@ class PagerDutyMonitor:
             if predicate(title_lower):
                 return True, label
         return False, None
+
+    def _has_related_active_incident(
+        self,
+        incident_id: str,
+        signature: str,
+    ) -> Optional[str]:
+        """
+        Check if any *other* triggered/acknowledged incident shares the
+        same job/DAG signature.
+
+        Reuses the same PD-API client the monitor already uses, so no extra
+        auth surface. Returns the matching incident's ID (the one we'd be
+        duplicating), or None if no match.
+
+        Cheap-ish — pulls all triggered+acked incidents (typically <50
+        for the on-call) and re-extracts the signature client-side.
+        """
+        try:
+            incidents = list(self.pagerduty_session.list_all(
+                'incidents',
+                params={
+                    'statuses[]': ['triggered', 'acknowledged'],
+                    'user_ids[]': [self.user_id],
+                },
+            ))
+        except pagerduty.Error as error:
+            if self.verbose:
+                print(f"  [debug] related-check failed for {incident_id}: {error}")
+            return None
+
+        for other in incidents:
+            other_id = other.get('id')
+            if not other_id or other_id == incident_id:
+                continue
+            other_sig = extract_job_signature(other.get('title', '') or '')
+            if other_sig == signature:
+                return other_id
+        return None
 
     def _try_auto_create_drgn(
         self,
@@ -278,6 +359,19 @@ class PagerDutyMonitor:
         skip, skip_reason = self._should_skip_drgn(incident_title)
         if skip:
             return {"status": "skipped", "reason": skip_reason}
+
+        # Cross-incident dedup: if there's another active incident with the
+        # same job/DAG signature, the underlying problem is already being
+        # tracked (either it has its own DRGN, or NOC explicitly chose not
+        # to make one). Skip this one to avoid noisy duplicate DRGNs.
+        signature = extract_job_signature(incident_title)
+        if signature:
+            related_id = self._has_related_active_incident(incident_id, signature)
+            if related_id:
+                return {
+                    "status": "skipped",
+                    "reason": f"related-incident-exists ({related_id})",
+                }
 
         if self.dry_run:
             return {"status": "dry_run", "reason": None}
@@ -317,9 +411,12 @@ class PagerDutyMonitor:
         if status == "skipped":
             reason = drgn_outcome.get("reason") or "unknown"
             print(f"  [skip-drgn] reason: {reason}")
+            # For summary aggregation, strip the parenthetical "(Q...)" tail
+            # so all related-incident-exists hits collapse into one row.
+            reason_label = reason.split(" (")[0]
             summary['drgn_skipped'] += 1
-            summary['drgn_skip_reasons'][reason] = (
-                summary['drgn_skip_reasons'].get(reason, 0) + 1
+            summary['drgn_skip_reasons'][reason_label] = (
+                summary['drgn_skip_reasons'].get(reason_label, 0) + 1
             )
         elif status == "created":
             print(f"  [drgn] created {drgn_outcome.get('drgn_key')}")
