@@ -406,6 +406,14 @@ class NOCToolkit:
                 script_path="tools/pd-create-drgn/pd_create_drgn.py",
                 enabled=True,
             ),
+            ToolDefinition(
+                tool_id="pd-clean-titles",
+                name="PD Clean Titles",
+                description="Strip 📤/🔗 emojis from open PD incident titles, replace with ' - '",
+                script_path="tools/pd-clean-titles/pd_clean_titles.py",
+                enabled=True,
+                category="more",
+            ),
         ]
 
     def get_enabled_tools(self) -> List[ToolDefinition]:
