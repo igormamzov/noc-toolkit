@@ -15,7 +15,7 @@ import random
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from noc_utils import load_env, new_pd_client
 
@@ -71,13 +71,43 @@ _DSSD_KEY_RE = re.compile(r"\bDSSD-\d+\b", re.IGNORECASE)
 # Order matters: more specific patterns first so we don't accidentally
 # match a substring inside a more verbose title.
 _JOB_SIGNATURE_PATTERNS: List[Tuple[str, re.Pattern]] = [
-    ("databricks-job", re.compile(r"databricks\s+batch\s+job\s+(\S+?)\s+failed", re.I)),
-    ("airflow-consec", re.compile(r"airflow\s+dag\s+(\S+?)\s+has\s+failed\s+consecutively", re.I)),
-    ("airflow-time",   re.compile(r"airflow\s+dag\s+(\S+?)\s+exceeded\s+expected\s+run\s+time", re.I)),
-    ("monitor",        re.compile(r"monitor\s+job\s+'?(\S+?)'?\s+failed", re.I)),
-    ("airflow-task",   re.compile(r"airflow\s+alert:\s*<TaskInstance:\s*(\S+?)\.", re.I)),
+    ("databricks-job",     re.compile(r"databricks\s+batch\s+job\s+(\S+?)\s+failed", re.I)),
+    ("airflow-consec",     re.compile(r"airflow\s+dag\s+(\S+?)\s+has\s+failed\s+consecutively", re.I)),
+    ("airflow-time",       re.compile(r"airflow\s+dag\s+(\S+?)\s+exceeded\s+expected\s+run\s+time", re.I)),
+    ("monitor",            re.compile(r"monitor\s+job\s+'?(\S+?)'?\s+failed", re.I)),
+    ("airflow-task",       re.compile(r"airflow\s+alert:\s*<TaskInstance:\s*(\S+?)\.", re.I)),
+    # Added 2026-06-04 after a Data-export incident (Q0HH17BJ0IU7UB ↔ Q3GPQFBY71EIQ1)
+    # slipped past dedup because no pattern covered it.
+    ("data-export",        re.compile(r"data\s+export\s+job\s+(\S+?)\s+failed", re.I)),
+    ("streaming-job",      re.compile(r"streaming\s+job\s+(\S+?)\s+failed", re.I)),
+    # Token-expiry alerts have one alert per token name; same token re-firing
+    # is a textbook duplicate.
+    ("token-expire",       re.compile(r"token\s+is\s+about\s+to\s+expire:\s*(\S+)", re.I)),
+    # Delta-delayed alerts encode the dataset in title; "GA4 web events" /
+    # "Orderwe streaming data" repeat under load, not different problems.
+    ("delta-delayed",      re.compile(r"databricks\s+delta\s+(.+?)\s+data\s+delayed", re.I)),
+    ("streaming-latency",  re.compile(r"(\S+?)\s+streaming\s+data\s+latency", re.I)),
+    # GoAnywhere standalone "feed delivery" alerts.
+    ("feed-delivery",      re.compile(r"(\S+?)\s+feed\s+delivery\s+failed", re.I)),
+    # "The mentioned batch dag <X> in airflow has not run ..." form (different
+    # from airflow-time which says "exceeded expected run time").
+    ("batch-dag-stalled",  re.compile(r"batch\s+dag\s+(\S+?)\s+in\s+airflow\s+has\s+not\s+run", re.I)),
+    # K8S host-down alerts — Instance: <FQDN>  is unresponsive.
+    ("k8s-host-down",      re.compile(r"k8s\]\s+instance:\s*(\S+?)\s+is\s+unresponsive", re.I)),
 ]
 _MONITOR_SUFFIX_RE = re.compile(r"(?:_airflow_prod|_run_prod|_prod)$", re.IGNORECASE)
+
+
+# Treat any of these prefixes appearing in the title as evidence the
+# incident is "in flight": DSSD = service-desk escalation, FCR = fix
+# coordination, COREDATA = direct DE engagement. Used to prioritize the
+# escalated twin when picking a dedup target.
+_ESCALATION_KEY_RE = re.compile(r"\b(?:DSSD-\d+|FCR-\d+|COREDATA-\d+)\b", re.IGNORECASE)
+
+
+def _title_has_escalation_key(title: str) -> bool:
+    """True if the PD title carries a Jira-ticket marker indicating prior escalation."""
+    return bool(_ESCALATION_KEY_RE.search(title or ""))
 
 
 def extract_job_signature(title: str) -> Optional[str]:
@@ -88,6 +118,12 @@ def extract_job_signature(title: str) -> Optional[str]:
     For Monitor-job titles, also strips the well-known `_airflow_prod` /
     `_run_prod` / `_prod` suffix so that "Monitor job foo_prod failed" and
     "Databricks batch job foo failed" hash to the same key.
+
+    For delta-delayed / streaming-latency / feed-delivery patterns the
+    captured group can contain spaces ("GA4 web events"), so we also
+    collapse internal whitespace and lowercase — needed so that two
+    incidents with slightly different casing/spacing still hash to the
+    same key.
     """
     if not title:
         return None
@@ -96,8 +132,15 @@ def extract_job_signature(title: str) -> Optional[str]:
         if not match:
             continue
         raw_name = match.group(1).strip()
+        # Trim trailing punctuation that some titles leave (e.g. trailing
+        # comma after a token name in "Token is about to expire: foo,").
+        raw_name = raw_name.rstrip(",.;:")
         if kind == "monitor":
             raw_name = _MONITOR_SUFFIX_RE.sub("", raw_name)
+        if kind in ("delta-delayed", "streaming-latency", "feed-delivery"):
+            # Multi-word capture — normalize so "GA4 web events" and
+            # " ga4  web   events" both become "ga4 web events".
+            raw_name = " ".join(raw_name.lower().split())
         return raw_name or None
     return None
 
@@ -158,6 +201,40 @@ COMMENTS_TYPO = [
 ]
 
 ALL_COMMENTS = COMMENTS_NORMAL + COMMENTS_TYPO
+
+# Dedup-note phrases — used when we acknowledge an incident that has a
+# twin already linked to a Jira ticket. The format mirrors COMMENTS_*
+# (random.choice + 50% lowercase + ~15% typo variant). Output goes into
+# the PD note as `<phrase> <full-incident-url>`, deliberately short and
+# casual so the note reads like the on-call typed it.
+DUP_COMMENTS_NORMAL = [
+    "same as",
+    "same issue as",
+    "already opened here",
+    "already tracked",
+    "dup of",
+    "duplicate of",
+    "covered by",
+    "see",
+    "see also",
+    "already escalated",
+    "linked to",
+]
+
+DUP_COMMENTS_TYPO = [
+    "smae as",
+    "saem issue as",
+    "alredy opened here",
+    "alread tracked",
+    "dpu of",
+    "duplciate of",
+    "covred by",
+    "se",
+    "alread escalated",
+]
+
+# PD UI base — used for the full-URL form in dedup notes.
+PD_INCIDENT_URL_BASE = "https://tmtoc.pagerduty.com/incidents"
 
 try:
     import pagerduty
@@ -302,17 +379,20 @@ class PagerDutyMonitor:
         self,
         incident_id: str,
         signature: str,
-    ) -> Optional[str]:
+    ) -> Optional[Dict[str, Any]]:
         """
-        Check if any *other* triggered/acknowledged incident shares the
-        same job/DAG signature.
+        Find another triggered/acknowledged incident that shares the same
+        job/DAG signature.
 
-        Reuses the same PD-API client the monitor already uses, so no extra
-        auth surface. Returns the matching incident's ID (the one we'd be
-        duplicating), or None if no match.
+        When multiple twins exist, prefer the one whose title already
+        carries a Jira-ticket key (DSSD-NNNN, FCR-NNNN, COREDATA-NNNN) —
+        those are the "already escalated / already in flight" twins, the
+        most useful target to point a dedup note at. Falls back to the
+        first non-escalated twin if no escalated one is found.
 
-        Cheap-ish — pulls all triggered+acked incidents (typically <50
-        for the on-call) and re-extracts the signature client-side.
+        Returns:
+            None — no twin found.
+            dict — {"id": Q..., "title": "...", "is_escalated": bool}
         """
         try:
             incidents = list(self.pagerduty_session.list_all(
@@ -327,14 +407,26 @@ class PagerDutyMonitor:
                 print(f"  [debug] related-check failed for {incident_id}: {error}")
             return None
 
+        twin_escalated: Optional[Dict[str, Any]] = None
+        twin_other: Optional[Dict[str, Any]] = None
         for other in incidents:
             other_id = other.get('id')
             if not other_id or other_id == incident_id:
                 continue
-            other_sig = extract_job_signature(other.get('title', '') or '')
-            if other_sig == signature:
-                return other_id
-        return None
+            other_title = other.get('title', '') or ''
+            other_sig = extract_job_signature(other_title)
+            if other_sig != signature:
+                continue
+            entry = {
+                "id": other_id,
+                "title": other_title,
+                "is_escalated": _title_has_escalation_key(other_title),
+            }
+            if entry["is_escalated"] and twin_escalated is None:
+                twin_escalated = entry
+            elif twin_other is None:
+                twin_other = entry
+        return twin_escalated or twin_other
 
     def _try_auto_create_drgn(
         self,
@@ -362,15 +454,24 @@ class PagerDutyMonitor:
 
         # Cross-incident dedup: if there's another active incident with the
         # same job/DAG signature, the underlying problem is already being
-        # tracked (either it has its own DRGN, or NOC explicitly chose not
-        # to make one). Skip this one to avoid noisy duplicate DRGNs.
+        # tracked (either it has its own DRGN, or it's escalated to a Jira
+        # ticket already). Skip this one to avoid noisy duplicate DRGNs.
+        # When a match is found and we're not in dry-run, also drop a
+        # casual "dup of <url>" note in the new incident so a future
+        # responder can jump straight to the canonical twin.
         signature = extract_job_signature(incident_title)
         if signature:
-            related_id = self._has_related_active_incident(incident_id, signature)
-            if related_id:
+            twin = self._has_related_active_incident(incident_id, signature)
+            if twin:
+                if not self.dry_run:
+                    self._post_dup_note(incident_id, twin["id"])
                 return {
                     "status": "skipped",
-                    "reason": f"related-incident-exists ({related_id})",
+                    "reason": (
+                        f"escalated-twin ({twin['id']})"
+                        if twin["is_escalated"]
+                        else f"related-incident-exists ({twin['id']})"
+                    ),
                 }
 
         if self.dry_run:
@@ -444,6 +545,21 @@ class PagerDutyMonitor:
         if random.random() < 0.5:
             comment = comment[0].lower() + comment[1:]
         return comment
+
+    def _pick_random_dup_phrase(self) -> str:
+        """
+        Pick a casual phrase for a dedup note. Mirrors _pick_random_comment
+        but pulls from DUP_COMMENTS_* and uses a slightly lower typo rate
+        (15% vs 20%) — readable URL hint matters a bit more than perfect
+        typing-feel here.
+        """
+        if random.random() < 0.15:
+            phrase = random.choice(DUP_COMMENTS_TYPO)
+        else:
+            phrase = random.choice(DUP_COMMENTS_NORMAL)
+        if random.random() < 0.5:
+            phrase = phrase[0].lower() + phrase[1:]
+        return phrase
 
     def log_needs_attention(self, incident_id: str, incident_title: str, incident_url: str) -> None:
         """
@@ -569,6 +685,24 @@ class PagerDutyMonitor:
         except pagerduty.Error as e:
             print(f"Error adding note to {incident_id}: {e}", file=sys.stderr)
             return False
+
+    def _post_dup_note(self, incident_id: str, twin_incident_id: str) -> None:
+        """
+        Drop a short casual note pointing at the duplicate twin.
+
+        Note format is `<phrase> <full-url>` — phrase pulled from the
+        DUP_COMMENTS_* pools with the same random/typo logic as the
+        ack-comment, full URL so the link is clickable in PD UI and
+        useful for a responder browsing notes later. Failures are swallowed
+        — a missing note never blocks the ack/skip decision.
+        """
+        twin_url = f"{PD_INCIDENT_URL_BASE}/{twin_incident_id}"
+        note_text = f"{self._pick_random_dup_phrase()} {twin_url}"
+        try:
+            self.add_note_to_incident(incident_id, note_text)
+        except Exception as error:  # noqa: BLE001 — never break the monitor loop
+            if self.verbose:
+                print(f"  [debug] dup-note failed for {incident_id}: {error}")
 
     def acknowledge_incident(self, incident_id: str) -> bool:
         """
