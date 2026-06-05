@@ -89,6 +89,14 @@ def _now_utc() -> datetime:
 
 
 def _parse_iso(s: str) -> Optional[datetime]:
+    """
+    Parse ISO 8601 timestamps. Tolerates both timezone-aware (`...Z` /
+    `...+00:00`) and naive forms — CDT's `last_runs.runs[].start_time`
+    comes back without any TZ marker (e.g. "2026-06-05T01:30:13") and
+    is documented as UTC, so we attach UTC ourselves when missing. Without
+    this fallback the CDT recovery check silently skipped every run and
+    always returned 'pending'.
+    """
     if not s:
         return None
     s = s.strip()
@@ -96,11 +104,21 @@ def _parse_iso(s: str) -> Optional[datetime]:
     try:
         return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S%z")
     except ValueError:
-        try:
-            # tolerate fractional seconds
-            return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f%z")
-        except ValueError:
-            return None
+        pass
+    try:
+        # Fractional seconds + tz (e.g. "2026-06-05T01:30:13.123456+0000")
+        return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f%z")
+    except ValueError:
+        pass
+    # Naive (no tz) — CDT batch_dashboard format. Attach UTC.
+    try:
+        return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        pass
+    try:
+        return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 def _iso_z(dt: datetime) -> str:
