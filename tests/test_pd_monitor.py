@@ -9,6 +9,7 @@ import pytest
 
 from pd_monitor import (
     PagerDutyMonitor,
+    DRGN_SKIP_RULES,
     SILENT_ACK_PATTERNS,
     COMMENTS_NORMAL,
     COMMENTS_TYPO,
@@ -102,6 +103,66 @@ class TestIsSilentAck:
     def test_missing_without_suffix(self):
         """'Missing' alone should not match any pattern."""
         assert PagerDutyMonitor._is_silent_ack("Missing data") is False
+
+
+# ===========================================================================
+# _should_skip_drgn
+# ===========================================================================
+
+class TestShouldSkipDrgn:
+    def test_ignore_in_title(self):
+        skip, reason = PagerDutyMonitor._should_skip_drgn("Some job failed [ignore]")
+        assert skip is True
+        assert reason == "ignore-in-title"
+
+    def test_dssd_key_in_title(self):
+        skip, reason = PagerDutyMonitor._should_skip_drgn("DSSD-31259 sfmc_backfeed job failed")
+        assert skip is True
+        assert reason == "dssd-key-in-title"
+
+    def test_silent_ack_pattern_skips_drgn(self):
+        skip, reason = PagerDutyMonitor._should_skip_drgn("Missing AUS & NZL load-status")
+        assert skip is True
+        assert reason == "silent-ack-pattern"
+
+    def test_irndbcore_discrepancy_skips_drgn(self):
+        skip, reason = PagerDutyMonitor._should_skip_drgn(
+            r"IRNDBCORE\ETL - Audit to Summary Discrepancy"
+        )
+        assert skip is True
+        assert reason == "irndbcore-audit-discrepancy"
+
+    def test_irndbcore_discrepancy_case_insensitive(self):
+        skip, reason = PagerDutyMonitor._should_skip_drgn(
+            "irndbcore etl audit to summary discrepancy"
+        )
+        assert skip is True
+        assert reason == "irndbcore-audit-discrepancy"
+
+    def test_irndbcore_without_discrepancy_does_not_skip(self):
+        skip, reason = PagerDutyMonitor._should_skip_drgn("IRNDBCORE job failed")
+        assert skip is False
+        assert reason is None
+
+    def test_discrepancy_without_irndbcore_does_not_skip(self):
+        skip, reason = PagerDutyMonitor._should_skip_drgn("Audit to Summary Discrepancy detected")
+        assert skip is False
+        assert reason is None
+
+    def test_normal_incident_does_not_skip(self):
+        skip, reason = PagerDutyMonitor._should_skip_drgn("Databricks batch job foo failed")
+        assert skip is False
+        assert reason is None
+
+    def test_empty_title_does_not_skip(self):
+        skip, reason = PagerDutyMonitor._should_skip_drgn("")
+        assert skip is False
+        assert reason is None
+
+    def test_all_rules_have_labels(self):
+        for label, predicate in DRGN_SKIP_RULES:
+            assert isinstance(label, str) and label
+            assert callable(predicate)
 
 
 # ===========================================================================

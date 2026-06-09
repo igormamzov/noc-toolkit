@@ -54,8 +54,8 @@ SILENT_ACK_PATTERNS = [
 
 # Title-substring rules for "skip auto-create DRGN" (case-insensitive).
 # Built from a 2026-05-31 audit of acked incidents that NOC handled
-# without creating DRGN. Order matters only for which reason gets logged
-# first if multiple match.
+# without creating DRGN. Updated 2026-06-08: added irndbcore-audit-discrepancy.
+# Order matters only for which reason gets logged first if multiple match.
 #
 # Each entry is (label, predicate) where predicate(title_lower: str) -> bool.
 # Using predicates instead of substrings so we can also handle regex cases
@@ -167,6 +167,12 @@ DRGN_SKIP_RULES: List[Tuple[str, Callable[[str], bool]]] = [
         lambda title_lower: any(
             pattern.lower() in title_lower for pattern in SILENT_ACK_PATTERNS
         ),
+    ),
+    # 4. IRNDBCORE ETL audit-discrepancy alerts — informational reconciliation
+    #    alerts that do not require a DRGN ticket.
+    (
+        "irndbcore-audit-discrepancy",
+        lambda title_lower: "irndbcore" in title_lower and "discrepancy" in title_lower,
     ),
 ]
 
