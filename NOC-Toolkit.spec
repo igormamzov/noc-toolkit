@@ -32,6 +32,20 @@ a = Analysis(
         'jira.exceptions',
         'tqdm',
         'openpyxl',
+        # ga-job: GoAnywhere session scraping
+        'bs4',
+        'beautifulsoup4',
+        'selenium',
+        'selenium.webdriver',
+        'selenium.webdriver.chrome.options',
+        'selenium.webdriver.common.by',
+        'selenium.webdriver.support.ui',
+        'selenium.webdriver.support.expected_conditions',
+        # cdt: CDT Control Panel API
+        'json',
+        # auto-close / freshness: Databricks SQL connector
+        'databricks.sql',
+        'databricks',
     ],
     hookspath=[],
     hooksconfig={},
