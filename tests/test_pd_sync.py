@@ -409,6 +409,58 @@ class TestExtractJiraTicketNumbers:
         result = self.tool.extract_jira_ticket_numbers("https://jira.example.com/browse/DSSD-123")
         assert result == ["DSSD-123"]
 
+    def test_triage_header_comment_yields_no_tickets(self):
+        """A triage note (severity header) must not surface its tickets."""
+        triage = (
+            "🟡 P3 — Moderate\n"
+            "👤 Tier: Unknown | Owner: Mercury team\n"
+            "🔄 Recurring — 3x in 90d\n"
+            "🎫 No active ticket\n"
+            "📝 FCR-14922 \"new source table v3\"\n"
+            "📋 Runbook: Operations Runbook - Heap Festiverse\n"
+            "Tickets: DSSD-31063, DSSD-31189"
+        )
+        assert self.tool.extract_jira_ticket_numbers(triage) == []
+
+    def test_triage_action_section_yields_no_tickets(self):
+        triage = (
+            "SITUATION\nThe job failed.\n"
+            "DO THIS NOW\n1. Check DSSD-31189\n"
+            "--- COPY-PASTE ---\nHi @olegmo — see FCR-14922\n--- END ---"
+        )
+        assert self.tool.extract_jira_ticket_numbers(triage) == []
+
+    def test_legitimate_comment_with_tickets_still_extracted(self):
+        """Normal escalation notes from the same service account still work."""
+        normal = "Escalated to DSSD-29198 - Open - Unassigned"
+        assert self.tool.extract_jira_ticket_numbers(normal) == ["DSSD-29198"]
+
+
+class TestIsTriageComment:
+    def setup_method(self):
+        self.tool = _make_tool()
+
+    def test_severity_header(self):
+        assert self.tool._is_triage_comment("🟡 P3 — Moderate") is True
+
+    def test_p1_red_header(self):
+        assert self.tool._is_triage_comment("🔴 P1 — Critical outage") is True
+
+    def test_do_this_now_section(self):
+        assert self.tool._is_triage_comment("DO THIS NOW\n1. restart") is True
+
+    def test_two_emoji_markers(self):
+        assert self.tool._is_triage_comment("👤 Owner: X\n🎫 No active ticket") is True
+
+    def test_single_marker_not_triage(self):
+        assert self.tool._is_triage_comment("🎫 DSSD-100 created") is False
+
+    def test_normal_comment_not_triage(self):
+        assert self.tool._is_triage_comment("Escalated to DSSD-29198 - Open") is False
+
+    def test_empty_not_triage(self):
+        assert self.tool._is_triage_comment("") is False
+
 
 # ===========================================================================
 # _check_ignore_disabled

@@ -36,6 +36,20 @@ class PDSync:
     # Keywords that signal an incident can be auto-snoozed without Jira lookup
     IGNORE_DISABLED_PATTERN = re.compile(r'\b(ignore|disabled)\b', re.IGNORECASE)
 
+    # Auto-triage comments (posted by the alert-triage responder) reference many
+    # tickets that are NOT the incident's actual escalation ticket — they are
+    # historical/related/hypothetical context. Treating them as the relevant
+    # ticket leads pd-sync to comment against the wrong ticket. Detect and skip
+    # them when extracting tickets. Header form: "🟡 P3 — Moderate"; full form
+    # adds "DO THIS NOW" / "--- COPY-PASTE ---" sections. Match by content, not
+    # author, because the same service account also posts legitimate Jira notes.
+    TRIAGE_HEADER_PATTERN = re.compile(r'[🔴🟠🟡🟢]\s*P[1-4]\s*[—-]')
+    TRIAGE_SECTION_PATTERN = re.compile(
+        r'DO THIS NOW|--- ?COPY-PASTE ?---|ESCALATE TO:|BEFORE ESCALATING',
+        re.IGNORECASE,
+    )
+    TRIAGE_MARKERS = ('👤', '🔄', '🎫', '📋')
+
     def __init__(
         self,
         pagerduty_api_token: str,
@@ -272,10 +286,30 @@ class PDSync:
             self.print_verbose(f"Warning: Could not fetch notes for incident {incident_id}: {error}")
             return False
 
+    def _is_triage_comment(self, text: str) -> bool:
+        """Return True if the comment is an auto-triage note.
+
+        Auto-triage notes embed many tickets (historical, related,
+        hypothetical) that are not the incident's real escalation ticket, so
+        their ticket references must be ignored. Identify them by content:
+        either the severity header (🟡 P3 —) or an action section
+        (DO THIS NOW / COPY-PASTE / ESCALATE TO), or two-plus emoji markers.
+        """
+        if not text:
+            return False
+        if self.TRIAGE_HEADER_PATTERN.search(text):
+            return True
+        if self.TRIAGE_SECTION_PATTERN.search(text):
+            return True
+        marker_hits = sum(1 for marker in self.TRIAGE_MARKERS if marker in text)
+        return marker_hits >= 2
+
     def extract_jira_ticket_numbers(self, text: str) -> List[str]:
         """
         Extract Jira ticket numbers from text using regex.
         Filters out DRGN tickets as they should be ignored.
+        Auto-triage comments are skipped entirely — their ticket references
+        are context, not the incident's actual escalation ticket.
 
         Args:
             text: Text to search for Jira ticket numbers
@@ -284,6 +318,9 @@ class PDSync:
             List of unique Jira ticket numbers found (excludes DRGN tickets)
         """
         if not text:
+            return []
+
+        if self._is_triage_comment(text):
             return []
 
         matches = self.JIRA_TICKET_PATTERN.findall(text)
