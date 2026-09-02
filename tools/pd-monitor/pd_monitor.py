@@ -144,6 +144,71 @@ def extract_job_signature(title: str) -> Optional[str]:
         return raw_name or None
     return None
 
+
+# --- Storm (mass-failure) detection -------------------------------------
+#
+# A "storm" is many *different* jobs failing within a short window with the
+# *same alert shape* — e.g. the 2026-06-14 20:30 UTC event where 37 distinct
+# `Monitor '<job>' failed` incidents fired in 30 seconds because the CDT
+# Monitor infrastructure blipped (empty alert bodies, jobs actually healthy).
+#
+# This is orthogonal to extract_job_signature() dedup, which catches the SAME
+# job firing twice. Here we collapse the *job name* to a "family" (the alert
+# template) so that 37 different job names all hash to one family key, then
+# look for a burst.
+#
+# Thresholds (chosen with Igor 2026-06-14): a family with MORE THAN
+# STORM_MIN_INCIDENTS incidents inside STORM_WINDOW_SECONDS is a storm. The
+# oldest incident in the group is the canonical survivor; the rest get their
+# DRGN suppressed and a "related to the mass issue" note (NOT a "dup of" note —
+# different phrasing on purpose, per Igor).
+STORM_MIN_INCIDENTS = 7          # strictly greater-than → needs >=8 to fire
+STORM_WINDOW_SECONDS = 300       # 5-minute cluster window
+
+# Family extractors: map a PD title to a coarse alert-family key by stripping
+# the job/dataset name entirely. Deliberately more lenient than
+# _JOB_SIGNATURE_PATTERNS — note the Monitor pattern here is "Monitor '<x>'
+# failed" (no "job" token), which is the storm shape and is NOT covered by the
+# signature patterns above.
+_STORM_FAMILY_PATTERNS: List[Tuple[str, re.Pattern]] = [
+    ("monitor-failed",      re.compile(r"^monitor\s+'?.+?'?\s+failed", re.I)),
+    ("databricks-job",      re.compile(r"databricks\s+batch\s+job\s+.+?\s+failed", re.I)),
+    ("airflow-consec",      re.compile(r"airflow\s+dag\s+.+?\s+has\s+failed\s+consecutively", re.I)),
+    ("airflow-time",        re.compile(r"airflow\s+dag\s+.+?\s+exceeded\s+expected\s+run\s+time", re.I)),
+    ("batch-dag-stalled",   re.compile(r"batch\s+dag\s+.+?\s+in\s+airflow\s+has\s+not\s+run", re.I)),
+    ("data-export",         re.compile(r"data\s+export\s+job\s+.+?\s+failed", re.I)),
+    ("streaming-job",       re.compile(r"streaming\s+job\s+.+?\s+failed", re.I)),
+    ("delta-delayed",       re.compile(r"databricks\s+delta\s+.+?\s+data\s+delayed", re.I)),
+    ("feed-delivery",       re.compile(r".+?\s+feed\s+delivery\s+failed", re.I)),
+    ("k8s-host-down",       re.compile(r"k8s\]\s+instance:\s*.+?\s+is\s+unresponsive", re.I)),
+]
+
+
+def extract_alert_family(title: str) -> Optional[str]:
+    """
+    Map a PD incident title to a coarse alert-family key, stripping the
+    per-job/per-dataset name so that N different jobs failing the same way all
+    collapse to ONE key. Returns None if no family pattern matches.
+
+    Used only by storm detection — see _detect_storm_groups.
+    """
+    if not title:
+        return None
+    for family, pattern in _STORM_FAMILY_PATTERNS:
+        if pattern.search(title):
+            return family
+    return None
+
+
+def _parse_pd_timestamp(value: Optional[str]) -> Optional[datetime]:
+    """Parse a PD ISO8601 created_at (e.g. '2026-06-14T20:30:29Z') to aware UTC."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
 DRGN_SKIP_RULES: List[Tuple[str, Callable[[str], bool]]] = [
     # 1. NOC explicitly tagged the incident as "ignore" — usually means
     #    the alert is known noise / disabled / manually handled.
@@ -239,6 +304,26 @@ DUP_COMMENTS_TYPO = [
     "alread escalated",
 ]
 
+# Storm-note phrases — used when an incident is part of a detected mass-failure
+# storm. Per Igor (2026-06-14): the note must say it is *related to the mass
+# issue* (NOT "dup of"), pointing at the canonical survivor incident. Same
+# random/lowercase/typo styling as the other note pools so it reads hand-typed.
+STORM_COMMENTS_NORMAL = [
+    "related to the mass issue",
+    "part of the mass failure",
+    "related to mass monitor failure",
+    "part of mass issue",
+    "related to the mass alert storm",
+    "same mass issue",
+]
+
+STORM_COMMENTS_TYPO = [
+    "related to the mas issue",
+    "part of the mass failrue",
+    "realted to mass issue",
+    "part of mas issue",
+]
+
 # PD UI base — used for the full-URL form in dedup notes.
 PD_INCIDENT_URL_BASE = "https://tmtoc.pagerduty.com/incidents"
 
@@ -264,6 +349,7 @@ class PagerDutyMonitor:
         background: bool = False,
         auto_create_drgn: bool = True,
         pd_ui_bearer_token: Optional[str] = None,
+        storm_dedup: bool = True,
     ) -> None:
         """
         Initialize the PagerDuty monitor.
@@ -284,6 +370,13 @@ class PagerDutyMonitor:
                 silently disabled (a warning prints once at startup).
             pd_ui_bearer_token: PD UI session bearer (`pdus+_...`). Required
                 for auto_create_drgn; ignored otherwise.
+            storm_dedup: If True (default), detect mass-failure storms
+                (>STORM_MIN_INCIDENTS same-family incidents within
+                STORM_WINDOW_SECONDS) and, for every non-canonical member,
+                suppress DRGN creation and post a "related to the mass issue"
+                note pointing at the oldest (canonical) incident. The
+                canonical incident is processed normally. Opt out via
+                --no-storm-dedup.
         """
         self.pagerduty_session = new_pd_client(pagerduty_api_token)
         self.pagerduty_api_token = pagerduty_api_token
@@ -298,6 +391,15 @@ class PagerDutyMonitor:
         self.user_id = self._get_current_user_id()
         self.user_email = self._get_user_email()
         self.processed_incidents: Set[str] = set()
+
+        # Storm-dedup state. self.storm_dedup is the on/off switch; the maps
+        # are (re)populated each cycle by _detect_storm_groups() in
+        # check_incidents_once(). storm_members maps a non-canonical incident
+        # id -> canonical incident id; storm_canonicals is the set of survivor
+        # ids (processed normally). Cleared and rebuilt every cycle.
+        self.storm_dedup = bool(storm_dedup)
+        self.storm_members: Dict[str, str] = {}
+        self.storm_canonicals: Set[str] = set()
 
         # Resolve whether the auto-create-DRGN feature is actually usable
         # this run. Three preconditions: requested by the user, the sibling
@@ -406,6 +508,10 @@ class PagerDutyMonitor:
                 params={
                     'statuses[]': ['triggered', 'acknowledged'],
                     'user_ids[]': [self.user_id],
+                    # Match get_triggered_incidents: without date_range=all the
+                    # dedup twin-search only sees the last ~30 days, so a long-
+                    # lived escalated twin older than 30d wouldn't be found.
+                    'date_range': 'all',
                 },
             ))
         except pagerduty.Error as error:
@@ -453,6 +559,16 @@ class PagerDutyMonitor:
         """
         if not self.auto_create_drgn:
             return {"status": "disabled", "reason": "feature off"}
+
+        # Storm-dedup: if this incident is a non-canonical member of a detected
+        # mass-failure storm, suppress its DRGN and (live only) drop a "related
+        # to the mass issue" note pointing at the canonical survivor. Checked
+        # before the title rules so a storm always wins.
+        canonical = self.storm_members.get(incident_id)
+        if canonical:
+            if not self.dry_run:
+                self._post_storm_note(incident_id, canonical)
+            return {"status": "skipped", "reason": f"storm-member ({canonical})"}
 
         skip, skip_reason = self._should_skip_drgn(incident_title)
         if skip:
@@ -567,6 +683,34 @@ class PagerDutyMonitor:
             phrase = phrase[0].lower() + phrase[1:]
         return phrase
 
+    def _pick_random_storm_phrase(self) -> str:
+        """
+        Pick a casual "related to the mass issue" phrase for a storm-member
+        note. Same styling as _pick_random_dup_phrase but from STORM_COMMENTS_*
+        and deliberately never says "dup of" (per Igor 2026-06-14).
+        """
+        if random.random() < 0.15:
+            phrase = random.choice(STORM_COMMENTS_TYPO)
+        else:
+            phrase = random.choice(STORM_COMMENTS_NORMAL)
+        if random.random() < 0.5:
+            phrase = phrase[0].lower() + phrase[1:]
+        return phrase
+
+    def _post_storm_note(self, incident_id: str, canonical_incident_id: str) -> None:
+        """
+        Drop a short "related to the mass issue <url>" note on a storm-member
+        incident, pointing at the canonical survivor. Failures are swallowed —
+        a missing note must never block the ack/skip decision.
+        """
+        canonical_url = f"{PD_INCIDENT_URL_BASE}/{canonical_incident_id}"
+        note_text = f"{self._pick_random_storm_phrase()} {canonical_url}"
+        try:
+            self.add_note_to_incident(incident_id, note_text)
+        except Exception as error:  # noqa: BLE001 — never break the monitor loop
+            if self.verbose:
+                print(f"  [debug] storm-note failed for {incident_id}: {error}")
+
     def log_needs_attention(self, incident_id: str, incident_title: str, incident_url: str) -> None:
         """
         Log an incident that needs attention to the output file.
@@ -597,6 +741,14 @@ class PagerDutyMonitor:
             'statuses[]': ['triggered'],
             'user_ids[]': [self.user_id],
             'sort_by': 'created_at:desc',
+            # PagerDuty's /incidents endpoint defaults to a ~30-day window;
+            # without date_range=all, an incident older than 30 days that is
+            # still triggered (e.g. a long-lived escalation PD auto-unacks)
+            # silently drops out of the result set and the monitor never
+            # re-acks or comments on it. 'all' widens the window to every
+            # open incident regardless of age. (2026-09-01: found 3 such
+            # >30d triggered incidents missing from the default query.)
+            'date_range': 'all',
         }
 
         try:
@@ -938,6 +1090,80 @@ class PagerDutyMonitor:
                     'logged_to_file': False
                 }
 
+    def _detect_storm_groups(self, incidents: List[Dict]) -> None:
+        """
+        Scan the current triggered batch for mass-failure storms and populate
+        self.storm_canonicals / self.storm_members for this cycle.
+
+        Algorithm:
+          1. Group incidents by alert family (extract_alert_family — strips the
+             job name so N different jobs failing the same way share a key).
+          2. Within each family, sort by created_at and slide a
+             STORM_WINDOW_SECONDS window. Any window holding MORE THAN
+             STORM_MIN_INCIDENTS incidents is a storm cluster.
+          3. The OLDEST incident in the cluster is canonical (survivor); every
+             other member maps to it in self.storm_members.
+
+        Always rebuilds state from scratch (cleared first) so a storm that has
+        since cleared doesn't leave stale suppression in place. Never raises —
+        a detection failure must not break the monitor loop.
+        """
+        self.storm_members.clear()
+        self.storm_canonicals.clear()
+        if not self.storm_dedup:
+            return
+
+        try:
+            by_family: Dict[str, List[Tuple[datetime, str]]] = {}
+            for inc in incidents:
+                fam = extract_alert_family(inc.get("title", "") or "")
+                ts = _parse_pd_timestamp(inc.get("created_at"))
+                if not fam or ts is None:
+                    continue
+                by_family.setdefault(fam, []).append((ts, inc["id"]))
+
+            window = timedelta(seconds=STORM_WINDOW_SECONDS)
+            for fam, items in by_family.items():
+                if len(items) <= STORM_MIN_INCIDENTS:
+                    continue  # not enough in the family at all to ever cluster
+                items.sort(key=lambda x: x[0])  # oldest first
+                # Slide a window; collect ids of any cluster that exceeds the
+                # threshold. A single family-wide burst is the common case, but
+                # this also handles two separate bursts in one family.
+                n = len(items)
+                claimed: Set[str] = set()
+                for i in range(n):
+                    start_ts = items[i][0]
+                    cluster = [
+                        (ts, iid) for ts, iid in items[i:]
+                        if ts - start_ts <= window
+                    ]
+                    if len(cluster) <= STORM_MIN_INCIDENTS:
+                        continue
+                    cluster_ids = [iid for _, iid in cluster]
+                    # Skip if this whole cluster is already claimed by an
+                    # earlier (and therefore at-least-as-large) window.
+                    if all(iid in claimed for iid in cluster_ids):
+                        continue
+                    canonical = cluster_ids[0]  # oldest in window
+                    self.storm_canonicals.add(canonical)
+                    for iid in cluster_ids:
+                        claimed.add(iid)
+                        if iid != canonical:
+                            self.storm_members[iid] = canonical
+
+            if self.storm_members and (self.verbose or self.details):
+                print(
+                    f"  [storm] detected {len(self.storm_canonicals)} storm "
+                    f"cluster(s), {len(self.storm_members)} member incident(s) "
+                    f"will have DRGN suppressed"
+                )
+        except Exception as error:  # noqa: BLE001 — never break the monitor loop
+            if self.verbose:
+                print(f"  [debug] storm detection failed: {error}")
+            self.storm_members.clear()
+            self.storm_canonicals.clear()
+
     def check_incidents_once(self) -> Dict:
         """
         Check triggered incidents once and process them.
@@ -965,6 +1191,11 @@ class PagerDutyMonitor:
                 'errors': []
             }
 
+        # Storm pass: detect mass-failure clusters in this batch BEFORE the
+        # per-incident loop, so process_incident can suppress DRGN for
+        # non-canonical members. Rebuilt every cycle.
+        self._detect_storm_groups(incidents)
+
         summary = {
             'total': len(incidents),
             'new_incidents': 0,
@@ -980,6 +1211,9 @@ class PagerDutyMonitor:
             'drgn_skipped': 0,
             'drgn_errors': 0,
             'drgn_skip_reasons': {},  # reason -> count
+            # storm-dedup tally for this cycle
+            'storm_members': len(self.storm_members),
+            'storm_clusters': len(self.storm_canonicals),
         }
 
         for incident in incidents:
@@ -1271,6 +1505,18 @@ Examples:
             'silently disabled with a startup warning.'
         ),
     )
+    parser.add_argument(
+        '--no-storm-dedup',
+        action='store_true',
+        help=(
+            'Disable mass-failure storm detection. By default, when more than '
+            f'{STORM_MIN_INCIDENTS} same-family incidents fire within '
+            f'{STORM_WINDOW_SECONDS}s (e.g. a CDT Monitor-infra blip spraying '
+            'dozens of "Monitor \'<job>\' failed" alerts), only the oldest '
+            'incident keeps its DRGN; the rest get DRGN suppressed plus a '
+            '"related to the mass issue" note pointing at it.'
+        ),
+    )
 
     return parser.parse_args()
 
@@ -1362,11 +1608,23 @@ def main() -> None:
     if args.background:
         config['background'] = True
 
-    # Auto-create DRGN feature: on by default, opt out via flag.
+    # Auto-create DRGN feature: on by default, opt out via flag OR env.
     # Bearer is read here so the monitor can keep functioning when the
     # bearer is absent (just with auto-create silently disabled).
-    config['auto_create_drgn'] = not args.no_auto_create_drgn
+    #
+    # Two ways to disable (either one wins):
+    #   * CLI flag  --no-auto-create-drgn   (one-off, per invocation)
+    #   * env var   MONITOR_AUTO_CREATE_DRGN=false   (sticky, set in .env
+    #     so it survives launcher restarts — handy during an alert storm
+    #     when you want acks to keep flowing but NO new Jira tickets).
+    # Accepts false/0/no/off (case-insensitive) as "disable".
+    env_auto_create = os.environ.get('MONITOR_AUTO_CREATE_DRGN', 'true').strip().lower()
+    env_disables_drgn = env_auto_create in ('false', '0', 'no', 'off')
+    config['auto_create_drgn'] = (not args.no_auto_create_drgn) and (not env_disables_drgn)
     config['pd_ui_bearer_token'] = os.environ.get('PD_UI_BEARER_TOKEN', '') or None
+
+    # Storm-dedup: on by default, opt out via flag.
+    config['storm_dedup'] = not args.no_storm_dedup
 
     # Create monitor instance
     try:
@@ -1391,6 +1649,11 @@ def main() -> None:
     else:
         print(f"Comment pattern: \"{config['comment_pattern']}\"")
     print(f"Mode: {'DRY RUN' if config['dry_run'] else 'LIVE'}")
+    print(
+        f"Storm dedup: {'ON' if config.get('storm_dedup', True) else 'OFF'}"
+        f" (>{STORM_MIN_INCIDENTS} same-family in {STORM_WINDOW_SECONDS}s)"
+    )
+    print(f"Auto-create DRGN: {'ON' if config.get('auto_create_drgn') else 'OFF'}")
 
     if args.once:
         print(f"Mode: Single check")
