@@ -508,6 +508,10 @@ class PagerDutyMonitor:
                 params={
                     'statuses[]': ['triggered', 'acknowledged'],
                     'user_ids[]': [self.user_id],
+                    # Match get_triggered_incidents: without date_range=all the
+                    # dedup twin-search only sees the last ~30 days, so a long-
+                    # lived escalated twin older than 30d wouldn't be found.
+                    'date_range': 'all',
                 },
             ))
         except pagerduty.Error as error:
@@ -737,6 +741,14 @@ class PagerDutyMonitor:
             'statuses[]': ['triggered'],
             'user_ids[]': [self.user_id],
             'sort_by': 'created_at:desc',
+            # PagerDuty's /incidents endpoint defaults to a ~30-day window;
+            # without date_range=all, an incident older than 30 days that is
+            # still triggered (e.g. a long-lived escalation PD auto-unacks)
+            # silently drops out of the result set and the monitor never
+            # re-acks or comments on it. 'all' widens the window to every
+            # open incident regardless of age. (2026-09-01: found 3 such
+            # >30d triggered incidents missing from the default query.)
+            'date_range': 'all',
         }
 
         try:
@@ -1596,10 +1608,19 @@ def main() -> None:
     if args.background:
         config['background'] = True
 
-    # Auto-create DRGN feature: on by default, opt out via flag.
+    # Auto-create DRGN feature: on by default, opt out via flag OR env.
     # Bearer is read here so the monitor can keep functioning when the
     # bearer is absent (just with auto-create silently disabled).
-    config['auto_create_drgn'] = not args.no_auto_create_drgn
+    #
+    # Two ways to disable (either one wins):
+    #   * CLI flag  --no-auto-create-drgn   (one-off, per invocation)
+    #   * env var   MONITOR_AUTO_CREATE_DRGN=false   (sticky, set in .env
+    #     so it survives launcher restarts — handy during an alert storm
+    #     when you want acks to keep flowing but NO new Jira tickets).
+    # Accepts false/0/no/off (case-insensitive) as "disable".
+    env_auto_create = os.environ.get('MONITOR_AUTO_CREATE_DRGN', 'true').strip().lower()
+    env_disables_drgn = env_auto_create in ('false', '0', 'no', 'off')
+    config['auto_create_drgn'] = (not args.no_auto_create_drgn) and (not env_disables_drgn)
     config['pd_ui_bearer_token'] = os.environ.get('PD_UI_BEARER_TOKEN', '') or None
 
     # Storm-dedup: on by default, opt out via flag.
@@ -1632,6 +1653,7 @@ def main() -> None:
         f"Storm dedup: {'ON' if config.get('storm_dedup', True) else 'OFF'}"
         f" (>{STORM_MIN_INCIDENTS} same-family in {STORM_WINDOW_SECONDS}s)"
     )
+    print(f"Auto-create DRGN: {'ON' if config.get('auto_create_drgn') else 'OFF'}")
 
     if args.once:
         print(f"Mode: Single check")

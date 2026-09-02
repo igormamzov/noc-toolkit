@@ -157,11 +157,19 @@ class PDSync:
             RuntimeError: If PagerDuty API request fails
         """
         try:
-            # Step 1: Get current open incidents (no 'since' parameter)
+            # Step 1: Get current open incidents.
+            # date_range='all' removes PagerDuty's default ~30-day window (and
+            # the 6-month cap on since/until) so long-lived open incidents older
+            # than 30 days are still returned. Without it, an incident that has
+            # been open >30 days silently drops out of the sync and never gets
+            # re-processed. (2026-09-01: confirmed 3 such >30d incidents were
+            # missed by both the no-since and the since=Jan-1 queries; only
+            # date_range=all surfaced them.)
             params_current = {
                 'statuses[]': ['triggered', 'acknowledged'],
                 'sort_by': 'created_at:desc',
-                'include[]': ['assignees']
+                'include[]': ['assignees'],
+                'date_range': 'all'
             }
 
             current_incidents = self.pagerduty_session.list_all('incidents', params=params_current)
